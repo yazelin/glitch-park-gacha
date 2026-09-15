@@ -986,18 +986,40 @@ function reset() {
 
 // ── 點擊 ────────────────────────────────────────────────────────────────
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
-function pick(ev) {
+/** 目前這個狀態下，滑鼠／手指指到什麼才算點得到。跟 pick() 共用同一份判斷，
+ *  這樣游標會不會變手指、跟點下去有沒有反應，兩邊永遠一致，不會各自漂掉。 */
+function hit() {
+  if (state === S.COINED) return ray.intersectObjects(crank.children, true).length > 0;
+  if (state === S.IDLE) return ray.intersectObjects([slot, bezel]).length > 0;
+  if (state === S.WAIT) return ray.intersectObject(ball, true).length > 0;
+  if (state === S.SHOW) return t > 0.55;
+  return false;
+}
+
+function setPointer(ev) {
   const e = ev.changedTouches ? ev.changedTouches[0] : ev;
   ptr.x = (e.clientX / innerWidth) * 2 - 1;
   ptr.y = -(e.clientY / innerHeight) * 2 + 1;
   ray.setFromCamera(ptr, camera);
-  if (state === S.COINED && ray.intersectObjects(crank.children, true).length) return turn();
-  if (state === S.IDLE && ray.intersectObjects([slot, bezel]).length) return coin();
-  if (state === S.WAIT && ray.intersectObject(ball, true).length) return open();
-  if (state === S.SHOW && t > 0.55) return reset();
+}
+
+function pick(ev) {
+  setPointer(ev);
+  if (state === S.COINED && hit()) return turn();
+  if (state === S.IDLE && hit()) return coin();
+  if (state === S.WAIT && hit()) return open();
+  if (state === S.SHOW && hit()) return reset();
 }
 renderer.domElement.addEventListener("pointerdown", pick);
 go.addEventListener("click", () => (state === S.SHOW ? reset() : coin()));
+
+// **投幣孔、把手、蛋這幾個可以點的東西，滑鼠移過去要變成手指游標。**
+// 沒有這個的話，玩家不知道畫面上哪裡點得下去——本人回報「滑鼠操作應該是
+// 手指頭」。手機是觸控，不會有 hover，這段對手機無害也用不到。
+renderer.domElement.addEventListener("pointermove", ev => {
+  setPointer(ev);
+  renderer.domElement.style.cursor = hit() ? "pointer" : "default";
+});
 
 // ── 收集架 ──────────────────────────────────────────────────────────────
 function paintShelf() {
