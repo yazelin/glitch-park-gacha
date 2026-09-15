@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>格莉奇遊樂園・扭蛋機</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2713%27 fill=%27%23b9a7ec%27/%3E%3Cpath d=%27M3 16h26%27 stroke=%27%23f3ede4%27 stroke-width=%273%27/%3E%3C/svg%3E">
+<style>
+  /* UI 的色票跟 3D 場景同一套（格莉奇的正典配色）。
+     **不要留深色版。** 場景是亮的，深色字卡壓在淡紫地板上讀不出來。 */
+  :root{
+    --ink:#453a5e; --dim:#7d75a0; --line:#c6bfe0;
+    --card:#f6f4fb; --violet:#9b7fd4; --mint:#3fb8ae; --amber:#c98a3c; --new:#c98a3c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#eceaf7;color:var(--ink);
+    font:14px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    -webkit-tap-highlight-color:transparent}
+  canvas{display:block;touch-action:none}
+  #ui{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;
+    justify-content:space-between;padding:14px}
+  #ui > *{pointer-events:auto}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .top,.bottom{text-shadow:0 1px 0 rgba(255,255,255,.7)}
+  h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.06em}
+  h1 small{display:block;font-size:11px;color:var(--dim);font-weight:400;letter-spacing:.02em}
+  #shelf{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:56vw}
+  .slot{width:30px;height:30px;border:1px solid var(--line);border-radius:50%;
+    display:grid;place-items:center;font-size:9px;color:#a9a0cc;background:rgba(255,255,255,.72);
+    transition:transform .3s}
+  .slot.has{border-color:var(--violet);color:var(--violet);background:#fff;font-weight:600}
+  .slot.pop{transform:scale(1.35)}
+  .bottom{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+  #hint{font-size:13px;color:var(--dim);min-height:1.6em;background:rgba(255,255,255,.66);padding:4px 10px;border-radius:6px}
+  #hint b{color:var(--ink);font-weight:600}
+  button{font:inherit;color:#fff;background:var(--violet);border:1px solid #8b6cc8;
+    border-radius:6px;padding:9px 18px;cursor:pointer}
+  button:hover:not(:disabled){background:#8b6cc8}
+  button:disabled{opacity:.35;cursor:default}
+  button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+  /* 暗角。**不要用黑。** 這個場景是淡紫的，壓黑會顯髒；
+     用她的深紫壓四角，看起來像鏡頭的自然衰減。 */
+  #vig{position:fixed;inset:0;pointer-events:none;z-index:1;
+    background:radial-gradient(ellipse 78% 72% at 50% 46%,transparent 40%,rgba(69,58,94,.30) 100%)}
+  /* 極細的顆粒，讓大片漸層不要有色帶 */
+  #vig::after{content:"";position:absolute;inset:0;opacity:.055;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")}
+  #ui{z-index:2}
+  /* 全螢幕的那一閃。**整個畫面要有反應**，不然演出只發生在角色身上。
+     用她的青色而不是純白，閃完之後畫面不會有一瞬間的失色。 */
+  #flash{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;
+    background:radial-gradient(ellipse 60% 50% at 50% 56%,rgba(255,255,255,.95),rgba(141,232,224,.5) 45%,transparent 75%)}
+  #flash.on{animation:flash .72s ease-out forwards}
+  @keyframes flash{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){ #flash.on{animation:none} }
+  #reveal{position:fixed;inset:0;display:none;place-items:center;pointer-events:none;
+    z-index:3;
+    /* **不要把場景洗掉。** 轉出來的那個紙板人才是主角，
+       蓋一層 .94 的白等於把它一起蓋掉了（第一版就是這樣）。
+       改成只在上緣壓一層淡的，下半部留給立牌。 */
+    /* **字放下面，不要壓在公仔身上。** 上面是招牌、中間是剛轉出來的東西，
+       字擠在中間會同時蓋掉兩者（第一版就是這樣）。 */
+    /* 場景會整個壓暗（見 main.js 的 dim），所以這一層也要跟著轉深，
+       不然亮色的字卡浮在暗場上像貼上去的。 */
+    background:linear-gradient(to top,rgba(25,20,40,.88) 0%,rgba(25,20,40,.5) 20%,transparent 44%)}
+  #reveal.on{display:grid;align-items:end}
+  #reveal .box{text-align:center;margin:0 0 76px;transform:translateY(8px);opacity:0;
+    animation:rise .5s cubic-bezier(.2,.9,.3,1) forwards}
+  @keyframes rise{to{transform:none;opacity:1}}
+  #reveal .who{font-size:26px;font-weight:600;letter-spacing:.08em;color:#f6f4fb}
+  #reveal .tag{font-size:11px;letter-spacing:.24em;color:#8de8e0;margin-bottom:6px}
+  #reveal .tag.new{color:#ffd98a;font-weight:700}
+  #reveal .line{color:#cfc6e8;margin-top:4px}
+  @media (max-width:520px){
+    #shelf{max-width:62vw;gap:4px}
+    .slot{width:24px;height:24px;font-size:8px}
+    #reveal .who{font-size:21px}
+  }
+</style>
+</head>
+<body>
+<div id="vig" aria-hidden="true"></div>
+<div id="ui">
+  <div class="top">
+    <h1>扭蛋機<small>格莉奇遊樂園</small></h1>
+    <div id="shelf" aria-label="收集進度"></div>
+  </div>
+  <div class="bottom">
+    <div id="hint">投一枚代幣，然後轉把手。</div>
+    <button id="go">投幣</button>
+  </div>
+</div>
+<div id="flash" aria-hidden="true"></div>
+<div id="reveal" aria-live="polite"></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
