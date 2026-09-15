@@ -185,7 +185,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // 燈泡跟招牌變成一片死白；ACES 把高光壓成有層次的滾降，整個畫面立刻像拍出來的
 // 而不是算出來的。曝光稍微壓低一點，留住亮部的細節。
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.06;
+// 白色環境光過強時，淡紫牆、地板與角色的中間色會一起被推到灰白。
+// 曝光只留給燈具與玻璃高光，場景材質本身保留色階與飽和度。
+renderer.toneMappingExposure = 0.9;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
@@ -264,10 +266,10 @@ function resize() {
   camera.aspect = w / h;
   // 兩種畫面都再靠近半步，減少空地與天花板；手機保留較大的安全邊界，
   // 桌機則讓主機台和有質感的背牆成為畫面主體。
-  camBase.set(0, tall ? 2.76 : 2.58, tall ? 8.72 : 7.0);
-  camAim.set(0, tall ? 1.72 : 1.6, -0.6);
+  camBase.set(0, tall ? 2.8 : 2.62, tall ? 7.9 : 6.1);
+  camAim.set(0, tall ? 1.74 : 1.75, -0.6);
   camera.position.copy(camBase);
-  camera.fov = tall ? 48 : 40;
+  camera.fov = tall ? 47 : 38;
   camera.lookAt(camAim);
   camera.updateProjectionMatrix();
 }
@@ -306,20 +308,20 @@ let camBase = new THREE.Vector3(), camAim = new THREE.Vector3();
 
 
 
-const hemi = new THREE.HemisphereLight(0xf2f0fb, PAL.floor2, 2.2);
+const hemi = new THREE.HemisphereLight(0xc9c2e6, 0x655879, 1.12);
 scene.add(hemi);
-const key = new THREE.DirectionalLight(0xfffaf0, 2.4);
+const key = new THREE.DirectionalLight(0xeee7ff, 1.42);
 key.position.set(3.2, 6, 4.5);
 key.castShadow = true;
 key.shadow.mapSize.set(1024, 1024);
 key.shadow.camera.left = key.shadow.camera.bottom = -5;
 key.shadow.camera.right = key.shadow.camera.top = 5;
 scene.add(key);
-const rim = new THREE.DirectionalLight(PAL.mint, 1.2);
+const rim = new THREE.DirectionalLight(PAL.mint, 0.78);
 rim.position.set(-4, 2.4, -3);
 scene.add(rim);
 // 機台上方那盞：讓罩子裡的蛋亮起來，遊樂園的燈就是要打在商品上
-const spot = new THREE.SpotLight(0xffffff, 26, 9, 0.62, 0.5, 1.6);
+const spot = new THREE.SpotLight(0xeee8ff, 12.5, 9, 0.62, 0.58, 1.6);
 spot.position.set(0, 4.6, 1.6);
 spot.target.position.set(0, 1.4, 0);
 spot.castShadow = true;
@@ -328,7 +330,7 @@ scene.add(spot, spot.target);
 DIMMABLE.push(hemi, key, rim, spot);
 // 地上的光池。真的算 IBL 太貴，貼一張加法漸層就有「聚光燈打在這裡」的樣子。
 const pool = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 5.6),
-  new THREE.MeshBasicMaterial({ map: GLOW, transparent: true, opacity: 0.3,
+  new THREE.MeshBasicMaterial({ map: GLOW, transparent: true, opacity: 0.16,
     blending: THREE.AdditiveBlending, depthWrite: false }));
 pool.rotation.x = -Math.PI / 2;
 pool.position.set(0, 0.012, 0.3);
@@ -339,9 +341,9 @@ const floorTex = (function () {
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const x = c.getContext("2d");
-  x.fillStyle = "#" + PAL.floor.toString(16).padStart(6, "0");
+  x.fillStyle = "#b4a7cf";
   x.fillRect(0, 0, 128, 128);
-  x.fillStyle = "#" + PAL.floor2.toString(16).padStart(6, "0");
+  x.fillStyle = "#d1c2b3";
   x.fillRect(0, 0, 64, 64); x.fillRect(64, 64, 64, 64);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -352,8 +354,8 @@ const floorTex = (function () {
 const floor = new THREE.Mesh(
   new THREE.CircleGeometry(11, 56),
   // 地板略帶反光：遊樂園的地是擦過的，會把燈映出來一點
-  new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.42, roughnessMap: ROUGH,
-    metalness: 0.06, color: 0xe6e2f0, envMapIntensity: 0.55 }));
+  new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.66, roughnessMap: ROUGH,
+    metalness: 0.025, color: 0xf2eef7, envMapIntensity: 0.28 }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
@@ -573,13 +575,13 @@ function coinFly() {
   const wallImage = wallContext.createImageData(384, 384);
   for (let i = 0; i < wallImage.data.length; i += 4) {
     const grain = Math.random() * 24 - 12;
-    wallImage.data[i] = 207 + grain;
-    wallImage.data[i + 1] = 200 + grain;
-    wallImage.data[i + 2] = 232 + grain;
+    wallImage.data[i] = 180 + grain;
+    wallImage.data[i + 1] = 168 + grain;
+    wallImage.data[i + 2] = 208 + grain;
     wallImage.data[i + 3] = 255;
   }
   wallContext.putImageData(wallImage, 0, 0);
-  wallContext.globalAlpha = .16;
+  wallContext.globalAlpha = .26;
   wallContext.lineWidth = 2;
   for (let y = 22; y < 384; y += 31) {
     wallContext.strokeStyle = y % 2 ? "#f2effa" : "#aaa0c4";
@@ -632,7 +634,7 @@ function coinFly() {
     const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 8), M(PAL.skirt, 0.5, 0.4));
     rod.position.set(x, 6, -1.6);
     scene.add(rod);
-    const p = new THREE.PointLight(0xfff4e0, 14, 11, 2);
+    const p = new THREE.PointLight(0xffedcf, 7.2, 10, 2);
     p.position.set(x, 5.2, -1.2);
     scene.add(p);
     DIMMABLE.push(p);
@@ -681,7 +683,8 @@ function coinFly() {
         envMapIntensity: 1.15 }));
     frame.castShadow = true;
     const inner = new THREE.Mesh(new THREE.PlaneGeometry(2.26, 2.72),
-      new THREE.MeshStandardMaterial({ color: bg, roughness: 0.78 }));
+      // 海報底色與角色原畫不受場景白光二次漂白，框體與玻璃仍保有實體光影。
+      new THREE.MeshBasicMaterial({ color: bg, toneMapped: false }));
     inner.position.set(0, 0.2, 0.065);
     g.add(frame, inner);
     // 標題畫在 canvas 上
@@ -702,7 +705,8 @@ function coinFly() {
     characterAtlas.then(tex => {
       if (!tex) return;
       const m = new THREE.Mesh(atlasPlane(charId, 2.4),
-        new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 0.9 }));
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5,
+          toneMapped: false }));
       m.position.set(0, 0.26, 0.078);
       g.add(m);
     });
@@ -718,7 +722,7 @@ function coinFly() {
     gx.fillStyle = sheen; gx.fillRect(0, 0, 128, 256);
     const glassTexture = new THREE.CanvasTexture(glassCanvas);
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(2.24, 2.7),
-      new THREE.MeshBasicMaterial({ map: glassTexture, transparent: true, opacity: .55,
+      new THREE.MeshBasicMaterial({ map: glassTexture, transparent: true, opacity: .26,
         depthWrite: false, toneMapped: false }));
     glass.position.set(0, .2, .096);
     g.add(glass);
