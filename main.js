@@ -317,17 +317,46 @@ skirt.position.y = 0.08;
 skirt.castShadow = true;
 machine.add(skirt);
 
-// 取物口：往內凹的一個洞
-const mouth = new THREE.Mesh(
-  roundedBox(0.72, 0.42, 0.34, 0.05),
-  new THREE.MeshStandardMaterial({ color: 0x2a2340, roughness: 1 }));
-mouth.position.set(0, 0.46, 0.5);
-machine.add(mouth);
-const lip = new THREE.Mesh(
-  new THREE.BoxGeometry(0.84, 0.06, 0.1),
-  new THREE.MeshStandardMaterial({ color: PAL.amber, roughness: 0.4, metalness: 0.25 }));
-lip.position.set(0, 0.24, 0.62);
-machine.add(lip);
+// 取物口。舊版用一塊有厚度的深色圓角盒貼在機身前面，輪廓自然會讀成
+// 凸出的平台。這裡改成四片向內收的斜壁、後方暗面和一圈薄框；雖然不用
+// 布林運算挖機身，視差與陰影仍會讓它看成往櫃體裡延伸的洞。
+const mouthCenterY = .47;
+const mouthBack = new THREE.Mesh(
+  new THREE.PlaneGeometry(.58, .29),
+  new THREE.MeshBasicMaterial({ color: 0x100d18 }));
+mouthBack.position.set(0, mouthCenterY, .607);
+machine.add(mouthBack);
+
+function mouthWall(points, material) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flat(), 3));
+  geometry.setIndex([0, 1, 2, 0, 2, 3]);
+  geometry.computeVertexNormals();
+  const wall = new THREE.Mesh(geometry, material);
+  machine.add(wall);
+  return wall;
+}
+const mouthTopMat = new THREE.MeshStandardMaterial({ color: 0x4a3c69, roughness: .82, side: THREE.DoubleSide });
+const mouthSideMat = new THREE.MeshStandardMaterial({ color: 0x332a4b, roughness: .9, side: THREE.DoubleSide });
+const mouthFloorMat = new THREE.MeshStandardMaterial({ color: 0x201a30, roughness: .96, side: THREE.DoubleSide });
+mouthWall([[-.41, .73, .656], [.41, .73, .656], [.29, .615, .61], [-.29, .615, .61]], mouthTopMat);
+mouthWall([[-.41, .21, .656], [-.29, .325, .61], [.29, .325, .61], [.41, .21, .656]], mouthFloorMat);
+mouthWall([[-.41, .21, .656], [-.41, .73, .656], [-.29, .615, .61], [-.29, .325, .61]], mouthSideMat);
+mouthWall([[.41, .73, .656], [.41, .21, .656], [.29, .325, .61], [.29, .615, .61]], mouthSideMat);
+
+const mouthFrameMat = new THREE.MeshStandardMaterial({ color: PAL.skirt, roughness: .42, metalness: .22 });
+for (const [w, h, x, y] of [
+  [.9, .055, 0, .755], [.9, .055, 0, .185], [.055, .52, -.435, mouthCenterY], [.055, .52, .435, mouthCenterY],
+]) {
+  const framePart = new THREE.Mesh(roundedBox(w, h, .055, .018), mouthFrameMat);
+  framePart.position.set(x, y, .638);
+  machine.add(framePart);
+}
+const mouthGuide = new THREE.Mesh(
+  new THREE.BoxGeometry(.46, .025, .018),
+  new THREE.MeshBasicMaterial({ color: PAL.amber }));
+mouthGuide.position.set(0, .345, .619);
+machine.add(mouthGuide);
 
 // 玻璃罩：半球 + 一圈金屬箍
 const dome = new THREE.Mesh(
@@ -1250,6 +1279,7 @@ if (new URLSearchParams(location.search).get("test") === "1") {
   window.__test.coin = () => window.__test.screenOf(coinMesh);
   window.__test.coinFly = () => coinFly();
   window.__test.music = () => ({ embedded, created: Boolean(themeAudio), playing: Boolean(themeAudio && !themeAudio.paused), muted: Boolean(themeAudio?.muted) });
+  window.__test.showOutletBall = () => { ball.visible = true; ball.position.copy(P2); state = S.WAIT; t = 0; };
   // **直接把 dim 撥到 1。** swiftshader 軟體渲染太慢，dt 又夾在每幀最多
   // 0.05 秒模擬時間，真實等了快兩秒，模擬時間其實只過了零點幾秒，壓黑
   // 根本還沒跑完：這支拿來確認「dim 真的到 1 之後背景是不是夠黑」，
