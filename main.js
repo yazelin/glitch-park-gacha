@@ -53,6 +53,9 @@ try { muted = localStorage.getItem("glitch-park-gacha:muted") === "1"; } catch (
 // 判斷「有沒有外層」用 window.self !== window.top，這個比較就算跨網域
 // 也讀得到（只是拿參照，不是讀對方頁面的內容），不會被瀏覽器擋。
 const embedded = window.self !== window.top;
+// 混音基準：角色語音檔統一為 -18 LUFS；語音保持在前景，短促音效稍退，
+// 背景音樂再低一層。這些是聽感比例，不是把三種聲音粗暴設成相同振幅。
+const MIX = { theme: .27, voice: .82, sfx: .72 };
 const THEME_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? "./assets/audio/glitch-park-theme.mp3"
   : "https://yazelin.github.io/glitch-park-claw/assets/audio/glitch-park-theme.mp3";
@@ -65,7 +68,7 @@ function requestTheme(action, isMuted = false) {
     parent.postMessage({ type: "glitch-park:music", action, track: "theme", url: new URL(THEME_URL, location.href).href, muted: isMuted }, "*");
     return;
   }
-  themeAudio ||= Object.assign(new Audio(THEME_URL), { loop: true, preload: "metadata", volume: .27 });
+  themeAudio ||= Object.assign(new Audio(THEME_URL), { loop: true, preload: "metadata", volume: MIX.theme });
   if (action === "mute") themeAudio.muted = isMuted;
   if (action === "play" && !isMuted) themeAudio.play().catch(() => {});
 }
@@ -259,8 +262,10 @@ function resize() {
   // 犧牲一點銳利度換流暢度划算。
   renderer.setPixelRatio(Math.min(devicePixelRatio, tall ? 1.5 : 2));
   camera.aspect = w / h;
-  camBase.set(0, tall ? 2.7 : 2.5, tall ? 9.2 : 7.4);
-  camAim.set(0, tall ? 1.7 : 1.55, -0.6);
+  // 兩種畫面都再靠近半步，減少空地與天花板；手機保留較大的安全邊界，
+  // 桌機則讓主機台和有質感的背牆成為畫面主體。
+  camBase.set(0, tall ? 2.76 : 2.58, tall ? 8.72 : 7.0);
+  camAim.set(0, tall ? 1.72 : 1.6, -0.6);
   camera.position.copy(camBase);
   camera.fov = tall ? 48 : 40;
   camera.lookAt(camAim);
@@ -560,13 +565,49 @@ function coinFly() {
 (function arcade() {
   const M = (c, r = 0.7, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
 
-  // 牆：三面圍起來，玩家的視角只看得到後面與兩側
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xcfc8e8, roughness: 0.88,
-    roughnessMap: ROUGH, envMapIntensity: 0.5 });
+  // 礦物塗料牆：細顆粒、抹刀痕與不規則色差都畫進同一張程式貼圖，再把
+  // 同張灰階變化當 bump。牆面仍只用一張 GPU 貼圖，但不再像光滑塑膠板。
+  const wallCanvas = document.createElement("canvas");
+  wallCanvas.width = wallCanvas.height = 384;
+  const wallContext = wallCanvas.getContext("2d");
+  const wallImage = wallContext.createImageData(384, 384);
+  for (let i = 0; i < wallImage.data.length; i += 4) {
+    const grain = Math.random() * 24 - 12;
+    wallImage.data[i] = 207 + grain;
+    wallImage.data[i + 1] = 200 + grain;
+    wallImage.data[i + 2] = 232 + grain;
+    wallImage.data[i + 3] = 255;
+  }
+  wallContext.putImageData(wallImage, 0, 0);
+  wallContext.globalAlpha = .16;
+  wallContext.lineWidth = 2;
+  for (let y = 22; y < 384; y += 31) {
+    wallContext.strokeStyle = y % 2 ? "#f2effa" : "#aaa0c4";
+    wallContext.beginPath();
+    wallContext.moveTo(-18, y);
+    wallContext.bezierCurveTo(90, y - 7, 245, y + 8, 410, y - 3);
+    wallContext.stroke();
+  }
+  wallContext.globalAlpha = 1;
+  const wallTexture = new THREE.CanvasTexture(wallCanvas);
+  wallTexture.wrapS = wallTexture.wrapT = THREE.RepeatWrapping;
+  wallTexture.repeat.set(5.5, 2);
+  wallTexture.colorSpace = THREE.SRGBColorSpace;
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture, color: 0xffffff,
+    roughness: 0.94, roughnessMap: ROUGH, bumpMap: wallTexture, bumpScale: 0.045,
+    envMapIntensity: 0.28 });
   const back = new THREE.Mesh(new THREE.PlaneGeometry(26, 7), wallMat);
   back.position.set(0, 3.5, -7);
   back.receiveShadow = true;
   scene.add(back);
+  // 大面牆的施工分區接縫。線很淺，只在側光下提供尺度，不做成磁磚格。
+  const seamMat = new THREE.MeshBasicMaterial({ color: 0x8f86ad, transparent: true, opacity: .2 });
+  for (const x of [-6.5, 0, 6.5]) {
+    const seam = new THREE.Mesh(new THREE.PlaneGeometry(.018, 7), seamMat);
+    seam.position.set(x, 3.5, -6.975); scene.add(seam);
+  }
+  const seam = new THREE.Mesh(new THREE.PlaneGeometry(26, .018), seamMat);
+  seam.position.set(0, 2.55, -6.974); scene.add(seam);
   for (const sx of [-1, 1]) {
     const w = new THREE.Mesh(new THREE.PlaneGeometry(14, 7), wallMat);
     w.position.set(sx * 9, 3.5, -0.5);
@@ -635,11 +676,13 @@ function coinFly() {
   function poster(x, charId, bg, caption) {
     const g = new THREE.Group();
     g.position.set(x, 3.3, -6.88);
-    const frame = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 3.2),
-      new THREE.MeshStandardMaterial({ color: 0xf6f4fb, roughness: 0.9 }));
+    const frame = new THREE.Mesh(roundedBox(2.5, 3.2, .11, .07),
+      new THREE.MeshStandardMaterial({ color: 0xe9e5f4, roughness: 0.3, metalness: .28,
+        envMapIntensity: 1.15 }));
+    frame.castShadow = true;
     const inner = new THREE.Mesh(new THREE.PlaneGeometry(2.26, 2.72),
-      new THREE.MeshStandardMaterial({ color: bg, roughness: 0.9 }));
-    inner.position.set(0, 0.2, 0.01);
+      new THREE.MeshStandardMaterial({ color: bg, roughness: 0.78 }));
+    inner.position.set(0, 0.2, 0.065);
     g.add(frame, inner);
     // 標題畫在 canvas 上
     const c = document.createElement("canvas");
@@ -654,15 +697,31 @@ function coinFly() {
     tt.colorSpace = THREE.SRGBColorSpace;
     const cap = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.41),
       new THREE.MeshStandardMaterial({ map: tt, transparent: true, roughness: 0.9 }));
-    cap.position.set(0, -1.32, 0.02);
+    cap.position.set(0, -1.32, 0.085);
     g.add(cap);
     characterAtlas.then(tex => {
       if (!tex) return;
       const m = new THREE.Mesh(atlasPlane(charId, 2.4),
         new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 0.9 }));
-      m.position.set(0, 0.26, 0.03);
+      m.position.set(0, 0.26, 0.078);
       g.add(m);
     });
+    // 展示框玻璃只留一道斜向柔光，透明度很低，不會把人物洗成灰白。
+    const glassCanvas = document.createElement("canvas");
+    glassCanvas.width = 128; glassCanvas.height = 256;
+    const gx = glassCanvas.getContext("2d");
+    const sheen = gx.createLinearGradient(0, 0, 128, 256);
+    sheen.addColorStop(.18, "rgba(255,255,255,0)");
+    sheen.addColorStop(.42, "rgba(255,255,255,.3)");
+    sheen.addColorStop(.55, "rgba(255,255,255,.05)");
+    sheen.addColorStop(.72, "rgba(255,255,255,0)");
+    gx.fillStyle = sheen; gx.fillRect(0, 0, 128, 256);
+    const glassTexture = new THREE.CanvasTexture(glassCanvas);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(2.24, 2.7),
+      new THREE.MeshBasicMaterial({ map: glassTexture, transparent: true, opacity: .55,
+        depthWrite: false, toneMapped: false }));
+    glass.position.set(0, .2, .096);
+    g.add(glass);
     scene.add(g);
   }
   poster(-4.9, "glitch", PAL.mint, "本月新商品");
@@ -932,7 +991,7 @@ const BASE_LIGHT = new WeakMap();
 // 短促的提示音，合成比找一份授權乾淨的音效快，檔案也是零位元組：這款
 // 之後要嵌進 Larch 的小遊戲卡，卡片本身已經在載入平台的東西，能不多帶
 // 檔案就不多帶。
-let actx = null, audioMaster = null;
+let actx = null, audioMaster = null, sfxMaster = null;
 const activeVoices = new Set();
 
 function audio() {
@@ -943,6 +1002,9 @@ function audio() {
     audioMaster = actx.createGain();
     audioMaster.gain.value = muted ? 0 : 1;
     audioMaster.connect(actx.destination);
+    sfxMaster = actx.createGain();
+    sfxMaster.gain.value = MIX.sfx;
+    sfxMaster.connect(audioMaster);
   }
   if (actx.state === "suspended") actx.resume();
   return actx;
@@ -954,7 +1016,7 @@ function tone(ctx, t0, freq, dur, type, gain) {
   g.gain.setValueAtTime(0, t0);
   g.gain.linearRampToValueAtTime(gain, t0 + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g).connect(audioMaster);
+  o.connect(g).connect(sfxMaster);
   o.start(t0); o.stop(t0 + dur + 0.02);
 }
 
@@ -968,7 +1030,7 @@ function click(ctx, t0, dur, gain) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(gain, t0);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  n.connect(f).connect(g).connect(audioMaster);
+  n.connect(f).connect(g).connect(sfxMaster);
   n.start(t0);
 }
 
@@ -998,7 +1060,7 @@ function sfxWin() {
 function playVoice(char) {
   if (muted) return;
   const a = new Audio(`./assets/voice/${char.id}.mp3`);
-  a.volume = 0.9;
+  a.volume = MIX.voice;
   activeVoices.add(a);
   a.addEventListener("ended", () => activeVoices.delete(a), { once: true });
   a.play().catch(() => {});   // 有些瀏覽器連使用者手勢裡都會偶爾拒放，別讓它炸整支
