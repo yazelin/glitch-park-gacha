@@ -42,6 +42,22 @@ const el = id => document.getElementById(id);
 const hint = el("hint"), go = el("go"), shelf = el("shelf"), reveal = el("reveal");
 const collection = el("collection"), collectionList = el("collectionList"), collectionClose = el("collectionClose");
 const muteBtn = el("mute");
+const exitBtn = el("exit");
+
+// ── 離開 ────────────────────────────────────────────────────────────────
+// **嵌進 Larch 之後要有路回去，不能只能關分頁。** 這支只負責「按了之後
+// postMessage 一個訊號給外層」，真正的「跳回調查板」要外層（Larch 的
+// 小遊戲卡）自己接收這個訊號才會動——那一半的線還沒接，等調查板真的把
+// 這個遊戲包進小遊戲卡的時候再對；訊息格式先定下來，兩邊各自照著做。
+// 判斷「有沒有外層」用 window.self !== window.top，這個比較就算跨網域
+// 也讀得到（只是拿參照，不是讀對方頁面的內容），不會被瀏覽器擋。
+const embedded = window.self !== window.top;
+if (embedded) {
+  exitBtn.hidden = false;
+  exitBtn.addEventListener("click", () => {
+    parent.postMessage({ type: "gacha:exit" }, "*");
+  });
+}
 
 // 一張中心亮、邊緣透明的圓形漸層，光暈與地上的光池都用它
 const GLOW = (function () {

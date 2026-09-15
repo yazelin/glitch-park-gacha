@@ -21,7 +21,11 @@
     justify-content:space-between;padding:14px}
   #ui > *{pointer-events:auto}
   .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .topLeft{display:flex;align-items:center;gap:10px}
   .topRight{display:flex;align-items:center;gap:8px}
+  #exit{padding:5px 10px;font-size:11px;background:transparent;color:var(--dim);
+    border-color:var(--line)}
+  #exit:hover{background:rgba(255,255,255,.5)}
   #mute{padding:5px 10px;font-size:11px;background:transparent;color:var(--dim);
     border-color:var(--line)}
   #mute:hover{background:rgba(255,255,255,.5)}
@@ -111,7 +115,12 @@
 <div id="vig" aria-hidden="true"></div>
 <div id="ui">
   <div class="top">
-    <h1>扭蛋機<small>格莉奇遊樂園</small></h1>
+    <div class="topLeft">
+      <!-- 只有嵌在別的頁面裡（iframe）才會出現，見 main.js 的 embedded 判斷。
+           獨立開網頁測試時沒有「外層」可以回去，按了也沒意義，所以預設藏著。 -->
+      <button id="exit" hidden>← 離開</button>
+      <h1>扭蛋機<small>格莉奇遊樂園</small></h1>
+    </div>
     <div class="topRight">
       <button id="mute" aria-pressed="false">音效：開</button>
       <div id="shelf" aria-label="查看收集進度" role="button" tabindex="0"></div>

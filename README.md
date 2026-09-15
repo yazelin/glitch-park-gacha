@@ -40,6 +40,17 @@ glitch-vn repo 的 `tools/voice_batch.py`。
 `SecurityError`）時改用 `postMessage` 跟外層（Larch 的變數）交換狀態。兩種情況
 遊戲本體呼叫的是同一組介面，不必知道自己在哪裡跑。
 
+## 離開（嵌入 Larch 之後）
+
+獨立開網頁時右上角沒有「離開」鈕——沒有外層可以回去，按了也沒意義。
+一旦被包進 iframe（`window.self !== window.top`），鈕就會出現；按下去會
+`parent.postMessage({ type: "gacha:exit" }, "*")`。
+
+**這一半只是送出訊號，接住訊號、跳回調查板是外層（Larch 的小遊戲卡）的事**，
+那一層還沒做。等調查板真的把這個遊戲包進小遊戲卡時，卡片自己的 JS 要監聽
+`message` 事件、收到 `gacha:exit` 就導回調查板。跟 `store.js` 的
+`gacha:ready`／`gacha:save`／`gacha:state` 是同一組協定，格式定調一致。
+
 ## 這是「格莉奇遊樂園」系列的第一個
 
 調查篇地圖上會有一個不受劇情解鎖限制、24 小時開著的地點「格莉奇遊樂園」，
