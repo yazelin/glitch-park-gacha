@@ -15,7 +15,8 @@ three.js，全部用基本幾何體組場景，沒有外部 3D 模型檔；角�
 流程：投幣（也可以直接點投幣孔）→ 轉把手 → 蛋掉下來 → 點蛋 → 打開 → 立牌從蛋殼
 站起來，機台退場、全場壓黑只留一盞聚光燈、放射光、黃色星星＋粉紅愛心、
 角色本人的語音講一句話。右上角的頭像列點下去可以看目前收集到哪幾個。
-右上角另有音效開關（會記住上次的選擇）。
+右上角另有聲音開關（會記住上次的選擇）。獨立開啟時，第一次操作後會循環播放
+格莉奇遊樂園共用的主題曲。
 
 ## 本機跑
 
@@ -26,9 +27,11 @@ python3 -m http.server 8000
 再開 `http://localhost:8000/`。不需要 npm install，`vendor/` 已經帶了
 `three.module.min.js`。
 
-## 音效與語音
+## 音樂、音效與語音
 
 投幣、轉把手、開獎三種提示音用 Web Audio API 現場合成，沒有外部音檔。
+背景音樂是 58 秒、96 kbps 的循環 MP3，延後到玩家開始操作才播放，不阻塞首屏場景。
+正式頁面與抓娃娃機使用同一個音訊網址，瀏覽器可以沿用快取。
 開獎那一刻播的角色語音是用 glitch-vn 本篇同一條 CosyVoice3 配音管線現生的
 （同一支參考音、同一個語氣指示），聲線跟本篇是同一個人；來源腳本見
 glitch-vn repo 的 `tools/voice_batch.py`。
@@ -39,6 +42,9 @@ glitch-vn repo 的 `tools/voice_batch.py`。
 （`srcdoc` + `sandbox="allow-scripts"`，opaque origin，`localStorage` 會直接丟
 `SecurityError`）時改用 `postMessage` 跟外層（Larch 的變數）交換狀態。兩種情況
 遊戲本體呼叫的是同一組介面，不必知道自己在哪裡跑。
+
+嵌入 Larch 時，iframe 不播放背景音樂，而以 `glitch-park:music` 訊息請 Larch
+外層持續播放同一首主題曲。切換不同遊樂園小遊戲時不會重頭播放，也不會疊音。
 
 ## 離開（嵌入 Larch 時）
 

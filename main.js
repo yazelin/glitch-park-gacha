@@ -2,12 +2,12 @@
  *
  * **角色是紙板立牌，不是 3D 模型。** 我們手上只有七張透明底立繪
  * （正篇的 sprite-*.png）。硬要生七個模型，一致性守不住；做成立在座子上的
- * 紙板人反而跟正篇的母題對得上——便利商店那個紙板人形就是這樣站著的。
+ * 紙板人反而跟正篇的母題對得上：便利商店那個紙板人形就是這樣站著的。
  * 厚度用「同一張圖再畫一次、往後挪一點點、染成紙板色」做出來，
  * 兩片之間那條邊看起來就是紙的斷面。
  *
  * 流程是一條線：投幣 → 轉把手 → 蛋掉下來 → 點蛋 → 打開 → 紙板人立起來。
- * 每一段都是時間驅動的，沒有物理引擎——蛋的路徑是寫死的三段曲線，
+ * 每一段都是時間驅動的，沒有物理引擎：蛋的路徑是寫死的三段曲線，
  * 因為這裡要的是「每次都好看」，不是「每次都不一樣」。
  */
 import * as THREE from "./vendor/three.module.min.js";
@@ -17,7 +17,7 @@ import { Store } from "./store.js";
 // ── 配色 ────────────────────────────────────────────────────────────────
 // **取自格莉奇的正典三視圖**（淡紫藍短髮、薰衣草連帽衫、深紫百褶裙與過膝襪、
 // 髮飾與領環上的青色像素光、白紫厚底鞋）。整個遊樂園都用她的色票，
-// 所以玩家一進來就知道這是誰的地盤——機台、地板、燈光都算在內。
+// 所以玩家一進來就知道這是誰的地盤：機台、地板、燈光都算在內。
 const PAL = {
   hair:   0xc2cbef,   // 髮 淡紫藍
   hoodie: 0xe3dff4,   // 連帽衫 薰衣草白
@@ -31,7 +31,7 @@ const PAL = {
   sky:    0xeceaf7,   // 天／背景
   // ── 互補色 ──────────────────────────────────────────────
   // **一整片紫青看久了會累。** 紫的補色在黃橘那一帶，青的補色在珊瑚紅。
-  // 用量刻意壓小：只出現在燈、獎品、招牌邊、幾台背景機——
+  // 用量刻意壓小：只出現在燈、獎品、招牌邊、幾台背景機：
   // 冷色仍然是主調，暖色只負責讓眼睛有地方休息。
   amber:  0xf2c46b,   // 暖 琥珀
   apricot:0xf3a97e,   // 暖 杏
@@ -43,6 +43,8 @@ const hint = el("hint"), go = el("go"), shelf = el("shelf"), reveal = el("reveal
 const collection = el("collection"), collectionList = el("collectionList"), collectionClose = el("collectionClose");
 const muteBtn = el("mute");
 const exitBtn = el("exit");
+let muted = false;
+try { muted = localStorage.getItem("glitch-park-gacha:muted") === "1"; } catch (e) { /* 環境不給存就當沒開過 */ }
 
 // ── 離開 ────────────────────────────────────────────────────────────────
 // **嵌進 Larch 之後要有路回去，不能只能關分頁。** 這支只負責「按了之後
@@ -51,11 +53,28 @@ const exitBtn = el("exit");
 // 判斷「有沒有外層」用 window.self !== window.top，這個比較就算跨網域
 // 也讀得到（只是拿參照，不是讀對方頁面的內容），不會被瀏覽器擋。
 const embedded = window.self !== window.top;
+const THEME_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
+  ? "./assets/audio/glitch-park-theme.mp3"
+  : "https://yazelin.github.io/glitch-park-claw/assets/audio/glitch-park-theme.mp3";
+let themeAudio = null;
+
+// 獨立遊玩時由本頁播放共用的遊樂園主題曲；嵌入 Larch 時完全不在 iframe
+// 裡播放，而是請外層接手。這樣切換不同機台，音樂不會從頭開始或同時疊兩首。
+function requestTheme(action, isMuted = false) {
+  if (embedded) {
+    parent.postMessage({ type: "glitch-park:music", action, track: "theme", url: new URL(THEME_URL, location.href).href, muted: isMuted }, "*");
+    return;
+  }
+  themeAudio ||= Object.assign(new Audio(THEME_URL), { loop: true, preload: "metadata", volume: .27 });
+  if (action === "mute") themeAudio.muted = isMuted;
+  if (action === "play" && !isMuted) themeAudio.play().catch(() => {});
+}
 if (embedded) {
   exitBtn.hidden = false;
   exitBtn.addEventListener("click", () => {
     parent.postMessage({ type: "gacha:exit" }, "*");
   });
+  requestTheme("play", muted);
 }
 
 // 一張中心亮、邊緣透明的圓形漸層，光暈與地上的光池都用它
@@ -75,7 +94,7 @@ const GLOW = (function () {
 
 // ── 讓每一樣東西的完成度對齊 ────────────────────────────────────────────
 // **一個部位做得比別的細，整體反而更假。** 罩子換成會折射的玻璃之後，
-// 旁邊那些純色方盒就顯得像紙糊的——本人的原話是「玻璃感提升，其他沒提升，
+// 旁邊那些純色方盒就顯得像紙糊的：本人的原話是「玻璃感提升，其他沒提升，
 // 反而非常怪」。所以這一節做的是把其餘部分拉到同一條線上：
 //   一、盒子要有倒角。現實裡沒有絕對銳利的邊，那條高光就是「這是實物」的訊號。
 //   二、表面要有微觀變化。完全均勻的粗糙度會讓高光像貼紙。
@@ -177,7 +196,7 @@ function resize() {
   const tall = w / h < 0.8;
   // **窄視窗（多半是手機）把像素比例壓低一點。** 全螢幕 3D 加上陰影、
   // 加法混色的光效，在真手機的 DPR 3 螢幕上全速算會發燙、降頻。
-  // 這裡不是猜的機海資料，是常見的手機安全上限——這個場景沒有細字要辨識，
+  // 這裡採常見的手機安全上限。這個場景沒有細字要辨識，
   // 犧牲一點銳利度換流暢度划算。
   renderer.setPixelRatio(Math.min(devicePixelRatio, tall ? 1.5 : 2));
   camera.aspect = w / h;
@@ -202,7 +221,7 @@ let camBase = new THREE.Vector3(), camAim = new THREE.Vector3();
 
 // **金屬一定要有環境貼圖，不然是全黑的。** MeshStandardMaterial 的金屬度越高，
 // 顏色越是從環境反射來的；只有方向光而沒有環境時，metalness 0.75 的金箍會
-// 算出一片近乎黑的東西——第一版的把手就是這樣變成一塊黑餅的。
+// 算出一片近乎黑的東西：第一版的把手就是這樣變成一塊黑餅的。
 // 這裡不載 HDR，用一張上亮下暗的漸層當環境，PMREM 濾一遍就夠亮出金屬感。
 (function environment() {
   const c = document.createElement("canvas");
@@ -314,7 +333,7 @@ machine.add(lip);
 const dome = new THREE.Mesh(
   new THREE.SphereGeometry(0.86, 40, 28, 0, Math.PI * 2, 0, Math.PI / 2),
   // **玻璃用 transmission，不要用 opacity。** 半透明只是把後面的東西調淡，
-  // transmission 會真的折射——裡面那堆蛋的邊緣會被罩子拉彎，那一點彎就是
+  // transmission 會真的折射：裡面那堆蛋的邊緣會被罩子拉彎，那一點彎就是
   // 「這是一塊玻璃」跟「這是一層霧」的差別。只有這一個物件用，不心疼。
   new THREE.MeshPhysicalMaterial({
     color: 0xffffff, roughness: 0.04, metalness: 0,
@@ -347,7 +366,7 @@ for (let i = 0; i < 34; i++) {
   // **之前只擋了「正上方的天花板」，沒擋「旁邊的弧面」。** 圓球中心到罩頂的
   // 垂直淨空用 √(R²−r²) 算沒錯，可是那只保證球不會從正上方戳穿；水平半徑
   // 到 0.66（球半徑 0.14）的球，中心 3D 距離其實逼近球心 0.86 那圈，
-  // 從側邊斜斜戳出玻璃——本人回報「轉蛋有一點點露出來」，肉眼看到的就是這個。
+  // 從側邊斜斜戳出玻璃：本人回報「轉蛋有一點點露出來」，肉眼看到的就是這個。
   // 正確做法是整顆球（中心＋半徑）都要落在罩子球面以內：
   //   √(r² + y²) + 球半徑 ≤ 罩子半徑 − 安全間隙
   const yMax = Math.sqrt(Math.max((DOME_R - BALL_R - MARGIN) ** 2 - r * r, 0));
@@ -356,7 +375,7 @@ for (let i = 0; i < 34; i++) {
   heap.add(m);
 }
 
-// 正面的招牌。文字畫在 canvas 上當貼圖——這是唯一不用額外檔案就能放中文的做法。
+// 正面的招牌。文字畫在 canvas 上當貼圖：這是唯一不用額外檔案就能放中文的做法。
 (function sign() {
   const c = document.createElement("canvas");
   c.width = 512; c.height = 160;
@@ -422,8 +441,8 @@ machine.add(slot);
 // **投幣要看得到一枚金幣飛進去，不能只是狀態切換。** 一片很薄的圓柱體，
 // 從手邊的位置飛向投幣孔，快到孔的時候縮小＋立起來，看起來像側身滑進縫裡。
 // **變數不能叫 coin。** 底下的投幣按鈕處理函式就叫 coin()，同名會炸。
-// **第一版半徑 0.09、純 PBR 反光，量出來完全看不見**——用一顆放大三倍、
-// 純色的除錯球比對過，才確定不是位置或遮擋的問題，是這顆真的太小太暗。
+// **第一版半徑 0.09、純 PBR 反光，量出來完全看不見**：用一顆放大三倍、
+  // 純色的除錯球比對過，確定位置與遮擋都正常；原本的金幣確實太小、太暗。
 // 場景裡連公仔都做到 1.8 高的誇張比例，金幣也該比寫實尺寸大一截才鎮得住。
 const coinMesh = new THREE.Mesh(
   new THREE.CylinderGeometry(0.16, 0.16, 0.022, 28),
@@ -489,7 +508,7 @@ function coinFly() {
     scene.add(p);
     DIMMABLE.push(p);
     // **光暈不上後製。** UnrealBloomPass 要多帶四五個檔案，而這裡只有三盞燈
-    // 跟一塊招牌需要發光——用一張加法混色的徑向漸層貼片就夠，成本幾乎是零。
+    // 跟一塊招牌需要發光：用一張加法混色的徑向漸層貼片就夠，成本幾乎是零。
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({
       map: GLOW, color: 0xffeccc, transparent: true, opacity: 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -596,14 +615,14 @@ function coinFly() {
         if (o.name === "body") o.material.color.setHex(tints[i % tints.length]);
         if (o.name === "metal") o.material.color.setHex(PAL.skirt);
         // **背景機台不可以掛同一塊招牌。** 六台一模一樣的「格莉奇遊樂園」
-        // 排在後面，看起來不是一間店，是同一張圖貼了六次。
+        // 排在後面會像同一張圖貼了六次，失去一整排店家的感覺。
         if (o.name === "sign") o.visible = false;
         // **背景的罩子不要用 transmission。** 那是會真的折射的玻璃材質，
-        // three.js 每一幀要為它多算一次不透明場景的貼圖——六台背景機台各配
+        // three.js 每一幀要為它多算一次不透明場景的貼圖：六台背景機台各配
         // 一顆等於同一個成本乘六倍。桌機軟體渲染量到只有 2 FPS 就是這裡在吃。
         // 背景本來就會被霧蓋掉、離主角又遠，換回便宜的半透明就夠了。
         if (o.name === "dome") {
-          // **本人回報兩次「還是看起來像完全透明」——上一輪加到 0.42 不夠。**
+          // **本人回報兩次「還是看起來像完全透明」：上一輪加到 0.42 不夠。**
           // 這次直接推到看得出「這是一顆實體的玻璃罩」的程度：顏色更飽和的
           // 淺藍、不透明度拉到 0.6，環境反射再加強，寧可比真玻璃稍微明顯，
           // 也不要回到「幾乎看不見」。
@@ -802,8 +821,8 @@ function fxUpdate(dt, age) {
     m.sp.position.set(Math.cos(m.a + age * m.spin * 0.6) * m.r,
                       0.1 + life * 0.95,
                       Math.sin(m.a + age * m.spin * 0.6) * m.r * 0.3 - 0.05);
-    // **加法混色在透明度接近 1 時會把顏色推向白色**（三個色頻同時疊加到滿）——
-    // 之前星星在最亮那一幀看起來是白的不是黃的，就是被這個效果洗掉的。
+    // **加法混色在透明度接近 1 時會把顏色推向白色**（三個色頻同時疊加到滿）：
+    // 之前星星在最亮那一幀被這個效果洗成白色，黃色消失了。
     // 峰值壓到 0.7，色相在最亮的瞬間也留得住，看起來才是黃色的星星而不是白閃光。
     m.sp.material.opacity = Math.sin(k * Math.PI) * 0.7;
     const pulse = 1 + Math.sin(age * 5 + m.a) * 0.15;
@@ -821,12 +840,10 @@ const BASE_LIGHT = new WeakMap();
 
 // ── 音效 ────────────────────────────────────────────────────────────────
 // **用 Web Audio API 現場合成，不掛外部音檔。** 投幣、轉把手、開獎三種都是
-// 短促的提示音，合成比找一份授權乾淨的音效快，檔案也是零位元組——這款
+// 短促的提示音，合成比找一份授權乾淨的音效快，檔案也是零位元組：這款
 // 之後要嵌進 Larch 的小遊戲卡，卡片本身已經在載入平台的東西，能不多帶
 // 檔案就不多帶。
 let actx = null;
-let muted = false;
-try { muted = localStorage.getItem("glitch-park-gacha:muted") === "1"; } catch (e) { /* 環境不給存就當沒開過 */ }
 
 function audio() {
   // **瀏覽器的自動播放政策要求 AudioContext 要在使用者手勢裡才能真的發聲。**
@@ -893,11 +910,25 @@ function playVoice(char) {
 function toggleMute() {
   muted = !muted;
   try { localStorage.setItem("glitch-park-gacha:muted", muted ? "1" : "0"); } catch (e) { /* 存不了就算了 */ }
+  requestTheme("mute", muted);
+  if (!muted) requestTheme("play");
   paintMute();
 }
 function paintMute() {
-  muteBtn.textContent = muted ? "音效：關" : "音效：開";
+  muteBtn.textContent = muted ? "聲音：關" : "聲音：開";
   muteBtn.setAttribute("aria-pressed", String(muted));
+}
+
+if (!embedded) {
+  requestTheme("play", muted);
+  const unlockTheme = () => requestTheme("play", muted);
+  addEventListener("pointerdown", unlockTheme, { once: true });
+  addEventListener("keydown", unlockTheme, { once: true });
+  addEventListener("visibilitychange", () => {
+    if (!themeAudio) return;
+    if (document.hidden) themeAudio.pause();
+    else requestTheme("play", muted);
+  });
 }
 
 function enterShow() {
@@ -905,7 +936,7 @@ function enterShow() {
   ball.visible = false;
   // **機台本身要藏起來。** 立牌走到鏡頭前展示時，機台還站在原地，
   // 壓黑時只有 prizeLight 沒被壓暗，那盞燈打在機台的白色機身上，
-  // 從她背後透出一塊發亮的方形——本人回報「腳邊那個方形框框」，
+  // 從她背後透出一塊發亮的方形：本人回報「腳邊那個方形框框」，
   // 追出來是這個，不是立牌自己的問題（拆過材質、拆過每一片貼圖都排除了）。
   // 展示這一刻本來就不需要看到機台，藏起來比縮小光錐更乾淨。
   machine.visible = false;
@@ -913,9 +944,9 @@ function enterShow() {
   playVoice(picked);
   ballTop.position.y = ballBot.position.y = 0; ballTop.rotation.x = 0;
   // **立牌要走到鏡頭前面來。** 留在機台旁邊的話，它旁邊是一台兩公尺高的
-  // 機器，再大的公仔都會看起來很小——本人回報的就是這個。
-  // 這一刻不是寫實比例，是展示：轉出來的東西站到你面前，機台退到後面去。
-  // **位置是算出來的，不是試出來的。** 鏡頭在 (0,2.5,7.4) 看向 (0,1.55,-0.6)，
+  // 機器，再大的公仔都會看起來很小：本人回報的就是這個。
+  // 這一刻採展示比例：轉出來的東西站到你面前，機台退到後面去。
+  // **位置依鏡頭參數計算。** 鏡頭在 (0,2.5,7.4) 看向 (0,1.55,-0.6)，
   // FOV 40°：在 z=2.8 那個深度，畫面裝得下的是 y≈0.28 到 3.62。
   // 立牌腳放在 y=0 的話，腳會落在畫面下緣之外（本人看到的就是腳被切掉）。
   // 所以架一座台子把它抬到 0.5，整個人就都在框裡，而且佔畫面一半高。
@@ -1029,7 +1060,7 @@ renderer.domElement.addEventListener("pointerdown", pick);
 go.addEventListener("click", () => (state === S.SHOW ? reset() : coin()));
 
 // **投幣孔、把手、蛋這幾個可以點的東西，滑鼠移過去要變成手指游標。**
-// 沒有這個的話，玩家不知道畫面上哪裡點得下去——本人回報「滑鼠操作應該是
+// 沒有這個的話，玩家不知道畫面上哪裡點得下去：本人回報「滑鼠操作應該是
 // 手指頭」。手機是觸控，不會有 hover，這段對手機無害也用不到。
 renderer.domElement.addEventListener("pointermove", ev => {
   setPointer(ev);
@@ -1064,7 +1095,7 @@ function paintShelf() {
 }
 
 // ── 收集清單面板 ────────────────────────────────────────────────────────
-// **點右上角那排頭像，列出已經轉到的人。** 只列轉到的，沒轉到的不出現——
+// **點右上角那排頭像，列出已經轉到的人。** 只列轉到的，沒轉到的不出現：
 // 本人拍板：不要用清單再洩漏一次「還有誰沒轉到」，那件事交給問號圖示就夠。
 function openCollection() {
   const owned = CHARS.filter(c => Store.data.owned.includes(c.id));
@@ -1109,7 +1140,7 @@ function frame(now) {
   dim += (dimTarget - dim) * Math.min(dt * 3.4, 1);
   if (dim > 0.001 || dimTarget > 0) {
     // **要真的壓到接近黑，不是壓成深紫。** 第一版留了 18% 的燈光地板跟只壓
-    // 88% 到 0x191428（那其實是深紫，不是黑），本人的原話是「應該整畫面壓黑」——
+    // 88% 到 0x191428（那其實是深紫，不是黑），本人的原話是「應該整畫面壓黑」：
     // 量出來的截圖只是「暗一點的紫」，沒有黑到讓獎品跳出來。
     // 這裡把地板壓到 4%（不是 0，全暗會讓場外輪廓完全消失、看起來像關機），
     // 目標色換成真的接近黑（帶一點點冷色相，不是純 #000，純黑在螢幕上會死黑一片）。
@@ -1168,7 +1199,7 @@ function frame(now) {
     standee.scale.setScalar(0.45 + ease.back(x) * 0.55);
     // **轉完就停，不要一直搖。** 原本 x=1 之後還疊了一個正弦波讓它持續小幅
     // 擺動，本人要的是「立好之後不動」。現在只剩落地前這段旋轉動畫，
-    // x=1 之後 rotation.y 就固定在 0，正對鏡頭——單片立牌本來就該正面看。
+    // x=1 之後 rotation.y 就固定在 0，正對鏡頭：單片立牌本來就該正面看。
     standee.rotation.y = (1 - x) * 1.1;
   }
 
@@ -1218,9 +1249,10 @@ if (new URLSearchParams(location.search).get("test") === "1") {
   window.__test.ball = () => window.__test.screenOf(ball);
   window.__test.coin = () => window.__test.screenOf(coinMesh);
   window.__test.coinFly = () => coinFly();
+  window.__test.music = () => ({ embedded, created: Boolean(themeAudio), playing: Boolean(themeAudio && !themeAudio.paused), muted: Boolean(themeAudio?.muted) });
   // **直接把 dim 撥到 1。** swiftshader 軟體渲染太慢，dt 又夾在每幀最多
   // 0.05 秒模擬時間，真實等了快兩秒，模擬時間其實只過了零點幾秒，壓黑
-  // 根本還沒跑完——這支拿來確認「dim 真的到 1 之後背景是不是夠黑」，
+  // 根本還沒跑完：這支拿來確認「dim 真的到 1 之後背景是不是夠黑」，
   // 不用等軟渲染追上真實時間。
   window.__test.forceDim = () => { dim = dimTarget = 1; };
   // 揭曉時把立牌轉到定格的角度截圖看仔細用，跳過那段旋轉動畫。
