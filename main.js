@@ -190,6 +190,65 @@ document.body.appendChild(renderer.domElement);
 // 宣告放在紙板立牌那一節的話，它在場景建好之前還沒初始化。
 const loader = new THREE.TextureLoader();
 
+// 全身立繪與頭像都收進同一張 atlas。過去會先抓七張全身圖，右上角與收集
+// 面板再各抓七張頭像；現在整頁只有一個角色圖片請求，也只上傳一張 GPU 貼圖。
+// 每格保留原圖寬高，不縮放、不拉伸，PlaneGeometry 的 UV 只取對應區塊。
+const ATLAS_URL = "./assets/characters-atlas.webp";
+const ATLAS_W = 1360, ATLAS_H = 618;
+const CHAR_ATLAS = {
+  glitch:    [2, 2, 199, 512],
+  catgrass:  [205, 2, 162, 512],
+  bambi:     [371, 2, 170, 512],
+  noah:      [545, 2, 240, 512],
+  tower:     [789, 2, 182, 512],
+  zerox:     [975, 2, 118, 512],
+  blackhole: [1097, 2, 250, 512],
+};
+const AVATAR_ATLAS = Object.fromEntries(
+  ["glitch", "catgrass", "bambi", "noah", "tower", "zerox", "blackhole"]
+    .map((id, i) => [id, [2 + i * 100, 520, 96, 96]]));
+let atlasCssUrl = "";
+const characterAtlas = fetch(ATLAS_URL)
+  .then(response => {
+    if (!response.ok) throw new Error(`角色 atlas 載入失敗：${response.status}`);
+    return response.blob();
+  })
+  .then(blob => new Promise(resolve => {
+    // HTTP 只取一次；Three.js 與 CSS 都讀這個本機 blob URL，不會再向伺服器抓圖。
+    atlasCssUrl = URL.createObjectURL(blob);
+    loader.load(atlasCssUrl, tex => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      resolve(tex);
+    }, undefined, () => resolve(null));
+  }))
+  .catch(() => null);
+
+function atlasPlane(charId, displayHeight) {
+  const [x, y, w, h] = CHAR_ATLAS[charId];
+  const geometry = new THREE.PlaneGeometry(displayHeight * w / h, displayHeight);
+  const uv = geometry.getAttribute("uv");
+  const u0 = x / ATLAS_W, v0 = 1 - (y + h) / ATLAS_H;
+  const us = w / ATLAS_W, vs = h / ATLAS_H;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * us, v0 + uv.getY(i) * vs);
+  uv.needsUpdate = true;
+  return geometry;
+}
+
+function avatarStyle(charId) {
+  const [x, y, w, h] = AVATAR_ATLAS[charId];
+  return `background-image:url('${atlasCssUrl}');background-size:${ATLAS_W / w * 100}% ${ATLAS_H / h * 100}%;background-position:${x / (ATLAS_W - w) * 100}% ${y / (ATLAS_H - h) * 100}%`;
+}
+
+function avatarNode(char, className = "") {
+  const avatar = document.createElement("span");
+  avatar.className = `avatar-sprite ${className}`.trim();
+  avatar.setAttribute("role", "img");
+  avatar.setAttribute("aria-label", char.name);
+  avatar.style.cssText = avatarStyle(char.id);
+  return avatar;
+}
+
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h);
@@ -320,9 +379,9 @@ machine.add(skirt);
 // 取物口。舊版用一塊有厚度的深色圓角盒貼在機身前面，輪廓自然會讀成
 // 凸出的平台。這裡改成四片向內收的斜壁、後方暗面和一圈薄框；雖然不用
 // 布林運算挖機身，視差與陰影仍會讓它看成往櫃體裡延伸的洞。
-const mouthCenterY = .47;
+const mouthCenterY = .38;
 const mouthBack = new THREE.Mesh(
-  new THREE.PlaneGeometry(.58, .29),
+  new THREE.PlaneGeometry(.58, .23),
   new THREE.MeshBasicMaterial({ color: 0x100d18 }));
 mouthBack.position.set(0, mouthCenterY, .607);
 machine.add(mouthBack);
@@ -339,14 +398,14 @@ function mouthWall(points, material) {
 const mouthTopMat = new THREE.MeshStandardMaterial({ color: 0x4a3c69, roughness: .82, side: THREE.DoubleSide });
 const mouthSideMat = new THREE.MeshStandardMaterial({ color: 0x332a4b, roughness: .9, side: THREE.DoubleSide });
 const mouthFloorMat = new THREE.MeshStandardMaterial({ color: 0x201a30, roughness: .96, side: THREE.DoubleSide });
-mouthWall([[-.41, .73, .656], [.41, .73, .656], [.29, .615, .61], [-.29, .615, .61]], mouthTopMat);
-mouthWall([[-.41, .21, .656], [-.29, .325, .61], [.29, .325, .61], [.41, .21, .656]], mouthFloorMat);
-mouthWall([[-.41, .21, .656], [-.41, .73, .656], [-.29, .615, .61], [-.29, .325, .61]], mouthSideMat);
-mouthWall([[.41, .73, .656], [.41, .21, .656], [.29, .325, .61], [.29, .615, .61]], mouthSideMat);
+mouthWall([[-.39, .59, .656], [.39, .59, .656], [.29, .5, .61], [-.29, .5, .61]], mouthTopMat);
+mouthWall([[-.39, .17, .656], [-.29, .27, .61], [.29, .27, .61], [.39, .17, .656]], mouthFloorMat);
+mouthWall([[-.39, .17, .656], [-.39, .59, .656], [-.29, .5, .61], [-.29, .27, .61]], mouthSideMat);
+mouthWall([[.39, .59, .656], [.39, .17, .656], [.29, .27, .61], [.29, .5, .61]], mouthSideMat);
 
 const mouthFrameMat = new THREE.MeshStandardMaterial({ color: PAL.skirt, roughness: .42, metalness: .22 });
 for (const [w, h, x, y] of [
-  [.9, .055, 0, .755], [.9, .055, 0, .185], [.055, .52, -.435, mouthCenterY], [.055, .52, .435, mouthCenterY],
+  [.84, .05, 0, .615], [.84, .05, 0, .145], [.05, .42, -.415, mouthCenterY], [.05, .42, .415, mouthCenterY],
 ]) {
   const framePart = new THREE.Mesh(roundedBox(w, h, .055, .018), mouthFrameMat);
   framePart.position.set(x, y, .638);
@@ -355,7 +414,7 @@ for (const [w, h, x, y] of [
 const mouthGuide = new THREE.Mesh(
   new THREE.BoxGeometry(.46, .025, .018),
   new THREE.MeshBasicMaterial({ color: PAL.amber }));
-mouthGuide.position.set(0, .345, .619);
+mouthGuide.position.set(0, .285, .619);
 machine.add(mouthGuide);
 
 // 玻璃罩：半球 + 一圈金屬箍
@@ -597,10 +656,9 @@ function coinFly() {
       new THREE.MeshStandardMaterial({ map: tt, transparent: true, roughness: 0.9 }));
     cap.position.set(0, -1.32, 0.02);
     g.add(cap);
-    loader.load(`./assets/chars/${charId}.webp`, tex => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const h = 2.4, w = h * (tex.image.width / tex.image.height);
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+    characterAtlas.then(tex => {
+      if (!tex) return;
+      const m = new THREE.Mesh(atlasPlane(charId, 2.4),
         new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 0.9 }));
       m.position.set(0, 0.26, 0.03);
       g.add(m);
@@ -697,7 +755,7 @@ scene.add(ball);
 
 // ── 紙板立牌 ────────────────────────────────────────────────────────────
 // 獎品專屬的那一盞。全場暗下來的時候只有它留著，像展示櫃裡打的燈。
-const prizeLight = new THREE.SpotLight(0xffffff, 0, 9, 0.5, 0.45, 1.4);
+const prizeLight = new THREE.SpotLight(0xd8ceff, 0, 9, 0.58, 0.68, 1.4);
 prizeLight.position.set(0.9, 4.2, 5.2);
 scene.add(prizeLight, prizeLight.target);
 
@@ -707,16 +765,18 @@ scene.add(standee);
 // buildStandee 每次呼叫都整組重建，不需要留模組層級的變數。
 
 function buildStandee(char, done) {
-  loader.load(`./assets/chars/${char.id}.webp`, tex => {
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const h = 1.8, w = h * (tex.image.width / tex.image.height);
+  characterAtlas.then(tex => {
+    if (!tex) { done && done(); return; }
+    const h = 1.8, w = h * (CHAR_ATLAS[char.id][2] / CHAR_ATLAS[char.id][3]);
     standee.clear();
 
     // **本人拍板：只要一片貼圖，不要疊層做厚度。** 疊 rim／front／edge／back
     // 四片假紙板厚度看起來反而像貼歪的四張紙；改回一片乾淨的立繪面板。
     const D = 0.02;   // 只留一點點，讓面板不會跟轉盤同一個深度
-    const front = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
-      new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 0.9 }));
+    const front = new THREE.Mesh(atlasPlane(char.id, h),
+      // 角色是原畫立牌，直接顯示貼圖原色；燈光只照台座與周邊，不再把淺色
+      // 頭髮和衣服疊亮到接近純白。
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, toneMapped: false }));
     front.position.set(0, h / 2, -D);
     front.castShadow = true;
 
@@ -872,12 +932,18 @@ const BASE_LIGHT = new WeakMap();
 // 短促的提示音，合成比找一份授權乾淨的音效快，檔案也是零位元組：這款
 // 之後要嵌進 Larch 的小遊戲卡，卡片本身已經在載入平台的東西，能不多帶
 // 檔案就不多帶。
-let actx = null;
+let actx = null, audioMaster = null;
+const activeVoices = new Set();
 
 function audio() {
   // **瀏覽器的自動播放政策要求 AudioContext 要在使用者手勢裡才能真的發聲。**
   // 第一次投幣的點擊本身就是手勢，這裡順著它才建立，不要在頁面一載入就開。
-  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!actx) {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    audioMaster = actx.createGain();
+    audioMaster.gain.value = muted ? 0 : 1;
+    audioMaster.connect(actx.destination);
+  }
   if (actx.state === "suspended") actx.resume();
   return actx;
 }
@@ -888,7 +954,7 @@ function tone(ctx, t0, freq, dur, type, gain) {
   g.gain.setValueAtTime(0, t0);
   g.gain.linearRampToValueAtTime(gain, t0 + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g).connect(ctx.destination);
+  o.connect(g).connect(audioMaster);
   o.start(t0); o.stop(t0 + dur + 0.02);
 }
 
@@ -902,7 +968,7 @@ function click(ctx, t0, dur, gain) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(gain, t0);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  n.connect(f).connect(g).connect(ctx.destination);
+  n.connect(f).connect(g).connect(audioMaster);
   n.start(t0);
 }
 
@@ -933,12 +999,19 @@ function playVoice(char) {
   if (muted) return;
   const a = new Audio(`./assets/voice/${char.id}.mp3`);
   a.volume = 0.9;
+  activeVoices.add(a);
+  a.addEventListener("ended", () => activeVoices.delete(a), { once: true });
   a.play().catch(() => {});   // 有些瀏覽器連使用者手勢裡都會偶爾拒放，別讓它炸整支
 }
 
 function toggleMute() {
   muted = !muted;
   try { localStorage.setItem("glitch-park-gacha:muted", muted ? "1" : "0"); } catch (e) { /* 存不了就算了 */ }
+  if (audioMaster) audioMaster.gain.setValueAtTime(muted ? 0 : 1, actx.currentTime);
+  if (muted) {
+    for (const voice of activeVoices) voice.pause();
+    activeVoices.clear();
+  }
   requestTheme("mute", muted);
   if (!muted) requestTheme("play");
   paintMute();
@@ -1019,7 +1092,7 @@ function turn() {
 // 蛋的路徑：罩子底 → 機台裡 → 取物口。三個控制點的貝茲曲線。
 const P0 = new THREE.Vector3(0, 1.32, 0);
 const P1 = new THREE.Vector3(0.18, 0.78, 0.28);
-const P2 = new THREE.Vector3(0, 0.44, 0.52);
+const P2 = new THREE.Vector3(0, 0.39, 0.52);
 function ballAt(x) {
   const a = P0.clone().lerp(P1, x), b = P1.clone().lerp(P2, x);
   return a.lerp(b, x);
@@ -1108,10 +1181,7 @@ function paintShelf() {
     // 一個字（「格」「黑」……）認不出是誰，頭像才認得出。沒轉到的維持問號，
     // 不要先把長相洩漏出去。
     if (has) {
-      const img = document.createElement("img");
-      img.src = `./assets/avatar/${c.id}.webp`;
-      img.alt = c.name;
-      d.appendChild(img);
+      d.appendChild(avatarNode(c));
     } else {
       d.textContent = "？";
     }
@@ -1130,7 +1200,7 @@ function openCollection() {
   const owned = CHARS.filter(c => Store.data.owned.includes(c.id));
   collectionList.innerHTML = owned.length
     ? owned.map(c => `<div class="row">
-        <img src="./assets/avatar/${c.id}.webp" alt="">
+        <span class="avatar-sprite collection-avatar" role="img" aria-label="${c.name}" style="${avatarStyle(c.id)}"></span>
         <div><div class="name">${c.name}</div><div class="line">「${c.line}」</div></div>
       </div>`).join("")
     : `<div class="empty">還沒轉到任何人，先去投幣看看。</div>`;
@@ -1178,7 +1248,7 @@ function frame(now) {
       if (!BASE_LIGHT.has(L)) BASE_LIGHT.set(L, L.intensity);
       L.intensity = BASE_LIGHT.get(L) * k;
     }
-    prizeLight.intensity = dim * 40;
+    prizeLight.intensity = dim * 9;
     const bg = new THREE.Color(PAL.sky).lerp(new THREE.Color(0x07060c), dim);
     scene.background = bg;
     scene.fog.color = bg;
@@ -1214,7 +1284,7 @@ function frame(now) {
       setHint("<b>點那顆蛋</b>打開它。");
     }
   } else if (state === S.WAIT) {
-    ball.position.y = 0.44 + Math.sin(t * 2.6) * 0.012;
+    ball.position.y = 0.39 + Math.sin(t * 2.6) * 0.012;
   } else if (state === S.OPEN) {
     const x = Math.min(t / 0.55, 1);
     ballTop.position.y = ease.out(x) * 0.42;
@@ -1240,22 +1310,19 @@ function frame(now) {
 (async function start() {
   await Store.load();
   resize();
-  paintShelf();
   paintMute();   // 反映上次關掉音效的選擇（存在 localStorage，跟遊戲進度分開存）
-  // 七張圖先載起來，轉到的時候才不會空一拍
-  let left = CHARS.length;
-  for (const c of CHARS) {
-    loader.load(`./assets/chars/${c.id}.webp`, () => { if (--left === 0) ready(); },
-      undefined, () => { if (--left === 0) ready(); });
-  }
+  go.disabled = true;
+  setHint("載入中……");
+  // 全頁唯一的角色 atlas 先載好，轉到角色與打開收集面板時都不再另發圖片請求。
+  await characterAtlas;
+  paintShelf();
+  ready();
   function ready() {
     go.disabled = false;
     setHint(Store.data.owned.length === CHARS.length
       ? "<b>七種都轉到了。</b>再投一枚也可以。"
       : "投一枚代幣，然後轉把手。");
   }
-  go.disabled = true;
-  setHint("載入中……");
   requestAnimationFrame(frame);
   // 轉到的時候才建立立牌；先建一個免得第一次卡頓
   buildStandee(CHARS[0]);
