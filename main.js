@@ -40,6 +40,8 @@ const PAL = {
 
 const el = id => document.getElementById(id);
 const hint = el("hint"), go = el("go"), shelf = el("shelf"), reveal = el("reveal");
+const collection = el("collection"), collectionList = el("collectionList"), collectionClose = el("collectionClose");
+const muteBtn = el("mute");
 
 // 一張中心亮、邊緣透明的圓形漸層，光暈與地上的光池都用它
 const GLOW = (function () {
@@ -323,12 +325,18 @@ machine.add(heap);
 // **罩子裡的蛋是裝飾，用店的色票，不要用角色色。** 角色色裡有灰有褐
 // （0x、黑洞先生、諾亞），混在粉紫裡會髒掉。真正代表角色的是轉出來那一顆。
 const DECO = [PAL.violet, PAL.mint, PAL.pink, PAL.hair, PAL.hoodie, PAL.shoe];
+const BALL_R = 0.14, DOME_R = 0.86, MARGIN = 0.03;   // 罩子內半徑扣掉安全間隙
 for (let i = 0; i < 34; i++) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(0.14, 18, 14), capMat(DECO[i % DECO.length]));
+  const m = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 18, 14), capMat(DECO[i % DECO.length]));
   const r = 0.66 * Math.sqrt(Math.random()), a = Math.random() * Math.PI * 2;
-  // 罩子是半徑 0.86 的半球，蛋要落在球內：越往外越低，才貼著弧面堆
-  const top = Math.sqrt(Math.max(0.86 * 0.86 - r * r, 0)) - 0.2;
-  m.position.set(Math.cos(a) * r, 0.02 + Math.random() * Math.max(top, 0.05), Math.sin(a) * r);
+  // **之前只擋了「正上方的天花板」，沒擋「旁邊的弧面」。** 圓球中心到罩頂的
+  // 垂直淨空用 √(R²−r²) 算沒錯，可是那只保證球不會從正上方戳穿；水平半徑
+  // 到 0.66（球半徑 0.14）的球，中心 3D 距離其實逼近球心 0.86 那圈，
+  // 從側邊斜斜戳出玻璃——本人回報「轉蛋有一點點露出來」，肉眼看到的就是這個。
+  // 正確做法是整顆球（中心＋半徑）都要落在罩子球面以內：
+  //   √(r² + y²) + 球半徑 ≤ 罩子半徑 − 安全間隙
+  const yMax = Math.sqrt(Math.max((DOME_R - BALL_R - MARGIN) ** 2 - r * r, 0));
+  m.position.set(Math.cos(a) * r, 0.02 + Math.random() * Math.max(yMax - 0.02, 0.05), Math.sin(a) * r);
   m.castShadow = true;
   heap.add(m);
 }
@@ -395,6 +403,32 @@ const slot = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0x0d0b12, roughness: 1 }));
 slot.position.set(0.5, 0.96, 0.63);
 machine.add(slot);
+
+// **投幣要看得到一枚金幣飛進去，不能只是狀態切換。** 一片很薄的圓柱體，
+// 從手邊的位置飛向投幣孔，快到孔的時候縮小＋立起來，看起來像側身滑進縫裡。
+// **變數不能叫 coin。** 底下的投幣按鈕處理函式就叫 coin()，同名會炸。
+// **第一版半徑 0.09、純 PBR 反光，量出來完全看不見**——用一顆放大三倍、
+// 純色的除錯球比對過，才確定不是位置或遮擋的問題，是這顆真的太小太暗。
+// 場景裡連公仔都做到 1.8 高的誇張比例，金幣也該比寫實尺寸大一截才鎮得住。
+const coinMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.16, 0.16, 0.022, 28),
+  new THREE.MeshStandardMaterial({ color: PAL.amber, roughness: 0.18, metalness: 0.8,
+    roughnessMap: ROUGH, envMapIntensity: 1.4,
+    emissive: PAL.amber, emissiveIntensity: 0.35 }));   // 帶一點自發光，側面轉到看不到反光時也不會整個消失
+coinMesh.rotation.x = Math.PI / 2;   // 扁面朝向玩家，好認得那是一枚錢幣
+coinMesh.visible = false;
+coinMesh.castShadow = true;
+machine.add(coinMesh);
+const COIN_FROM = new THREE.Vector3(1.1, 1.25, 1.3);          // 從手邊的方向飛出來
+const COIN_TO = new THREE.Vector3(0.5, 0.96, 0.63);            // 投幣孔
+let coinT = null;   // null＝沒有動畫在跑；0→1 是動畫進度
+
+function coinFly() {
+  coinT = 0;
+  coinMesh.visible = true;
+  coinMesh.position.copy(COIN_FROM);
+  coinMesh.scale.setScalar(1);
+}
 
 // ── 遊樂園本體 ──────────────────────────────────────────────────────────
 // **主角機台外面要有一間店。** 只放一台機台的話，玩家看到的是一個道具，
@@ -554,9 +588,13 @@ machine.add(slot);
         // 一顆等於同一個成本乘六倍。桌機軟體渲染量到只有 2 FPS 就是這裡在吃。
         // 背景本來就會被霧蓋掉、離主角又遠，換回便宜的半透明就夠了。
         if (o.name === "dome") {
+          // **本人回報兩次「還是看起來像完全透明」——上一輪加到 0.42 不夠。**
+          // 這次直接推到看得出「這是一顆實體的玻璃罩」的程度：顏色更飽和的
+          // 淺藍、不透明度拉到 0.6，環境反射再加強，寧可比真玻璃稍微明顯，
+          // 也不要回到「幾乎看不見」。
           o.material = new THREE.MeshStandardMaterial({
-            color: 0xffffff, roughness: 0.15, metalness: 0, transparent: true,
-            opacity: 0.28, side: THREE.DoubleSide });
+            color: 0x8fc4ea, roughness: 0.1, metalness: 0, transparent: true,
+            opacity: 0.6, side: THREE.DoubleSide, envMapIntensity: 1.6 });
         }
         o.castShadow = false;                 // 背景不投影，省算也省雜訊
       });
@@ -595,8 +633,6 @@ ball.visible = false;
 scene.add(ball);
 
 // ── 紙板立牌 ────────────────────────────────────────────────────────────
-// 紙板也不是牛皮紙色——這座遊樂園連紙板都是她的色票。
-const CARDBOARD = 0xbfb2de;
 // 獎品專屬的那一盞。全場暗下來的時候只有它留著，像展示櫃裡打的燈。
 const prizeLight = new THREE.SpotLight(0xffffff, 0, 9, 0.5, 0.45, 1.4);
 prizeLight.position.set(0.9, 4.2, 5.2);
@@ -605,7 +641,7 @@ scene.add(prizeLight, prizeLight.target);
 const standee = new THREE.Group();
 standee.visible = false;
 scene.add(standee);
-let front, back, foot;
+// buildStandee 每次呼叫都整組重建，不需要留模組層級的變數。
 
 function buildStandee(char, done) {
   loader.load(`./assets/chars/${char.id}.webp`, tex => {
@@ -613,40 +649,17 @@ function buildStandee(char, done) {
     const h = 1.8, w = h * (tex.image.width / tex.image.height);
     standee.clear();
 
-    // **厚度要看得出來，不能只差兩公分。** 第一版前後兩片只隔 0.02，
-    // 轉到側面幾乎重疊，看起來還是一張紙。真的紙板立牌有三個特徵：
-    //   一、切邊會留一圈紙板色的白邊（模造時故意留的）
-    //   二、正反兩面之間有肉眼看得到的厚度
-    //   三、後面是素色的紙板，不是鏡像的圖
-    // 這裡三個都做：外框放大 4%、前後隔 0.07、背面純紙板色。
-    const D = 0.07;
-    const rim = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.045, h * 1.045),
-      new THREE.MeshStandardMaterial({ color: 0xfffdf7, alphaMap: tex, transparent: true,
-        alphaTest: 0.35, roughness: 0.95, emissive: 0x2a2440, emissiveIntensity: 0.06 }));
-    rim.position.set(0, h / 2, -0.005);
-
-    front = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+    // **本人拍板：只要一片貼圖，不要疊層做厚度。** 疊 rim／front／edge／back
+    // 四片假紙板厚度看起來反而像貼歪的四張紙；改回一片乾淨的立繪面板。
+    const D = 0.02;   // 只留一點點，讓面板不會跟轉盤同一個深度
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
       new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 0.9 }));
-    front.position.y = h / 2;
+    front.position.set(0, h / 2, -D);
     front.castShadow = true;
 
-    // 斷面：把外框再畫一次、染成紙板色，夾在前後之間，側看就是那條厚度
-    const edge = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.045, h * 1.045),
-      new THREE.MeshStandardMaterial({ color: CARDBOARD, alphaMap: tex, transparent: true,
-        alphaTest: 0.35, roughness: 1, side: THREE.DoubleSide }));
-    edge.position.set(0, h / 2, -D / 2);
-
-    back = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.045, h * 1.045),
-      new THREE.MeshStandardMaterial({ color: CARDBOARD, alphaMap: tex, transparent: true,
-        alphaTest: 0.35, roughness: 1, side: THREE.DoubleSide }));
-    back.position.set(0, h / 2, -D);
-
-    // 底座：一塊往前折的紙板，加一個小轉盤
-    foot = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.03, 0.4),
-      new THREE.MeshStandardMaterial({ color: CARDBOARD, roughness: 1 }));
-    foot.position.set(0, 0.015, 0.18 - D / 2);
-    foot.castShadow = foot.receiveShadow = true;
     // 轉盤與台座。台座讓立牌離地，展示的時候整個人才進得了畫面。
+    // **不要另外加一塊「往前折的紙板」底座。** 那塊小方塊在亮場景下
+    // 幾乎看不出立體，只讀成立牌腳邊一個莫名的白色方框（本人回報）。
     const turn = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.66, w * 0.7, 0.06, 36),
       new THREE.MeshStandardMaterial({ color: PAL.mint, roughness: 0.3, metalness: 0.25,
         roughnessMap: ROUGH, envMapIntensity: 1.1 }));
@@ -658,7 +671,7 @@ function buildStandee(char, done) {
     stand.position.set(0, -0.31, -D / 2);
     stand.castShadow = true;
 
-    standee.add(rim, front, edge, back, foot, turn, stand);
+    standee.add(front, turn, stand);
     done && done();
   });
 }
@@ -791,9 +804,98 @@ let state = S.IDLE, t = 0, picked = null, isNew = false;
 let dim = 0, dimTarget = 0;
 const BASE_LIGHT = new WeakMap();
 
+// ── 音效 ────────────────────────────────────────────────────────────────
+// **用 Web Audio API 現場合成，不掛外部音檔。** 投幣、轉把手、開獎三種都是
+// 短促的提示音，合成比找一份授權乾淨的音效快，檔案也是零位元組——這款
+// 之後要嵌進 Larch 的小遊戲卡，卡片本身已經在載入平台的東西，能不多帶
+// 檔案就不多帶。
+let actx = null;
+let muted = false;
+try { muted = localStorage.getItem("glitch-park-gacha:muted") === "1"; } catch (e) { /* 環境不給存就當沒開過 */ }
+
+function audio() {
+  // **瀏覽器的自動播放政策要求 AudioContext 要在使用者手勢裡才能真的發聲。**
+  // 第一次投幣的點擊本身就是手勢，這裡順著它才建立，不要在頁面一載入就開。
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (actx.state === "suspended") actx.resume();
+  return actx;
+}
+
+function tone(ctx, t0, freq, dur, type, gain) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(ctx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+
+/** 一聲短促的白噪音喀嚓，濾成偏高頻，當機械聲用。 */
+function click(ctx, t0, dur, gain) {
+  const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const n = ctx.createBufferSource(); n.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 1200;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(gain, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  n.connect(f).connect(g).connect(ctx.destination);
+  n.start(t0);
+}
+
+function sfxCoin() {
+  if (muted) return;
+  const ctx = audio(), t0 = ctx.currentTime;
+  tone(ctx, t0, 1500, 0.09, "sine", 0.16);
+  tone(ctx, t0 + 0.05, 2200, 0.12, "sine", 0.14);
+}
+
+function sfxCrank() {
+  if (muted) return;
+  const ctx = audio(), t0 = ctx.currentTime;
+  // 六聲喀嚓，模擬齒輪一格一格轉過去
+  for (let i = 0; i < 6; i++) click(ctx, t0 + i * 0.09, 0.025, 0.1);
+}
+
+function sfxWin() {
+  if (muted) return;
+  const ctx = audio(), t0 = ctx.currentTime;
+  [523.25, 659.25, 784.0, 1046.5].forEach((f, i) =>   // C5 E5 G5 C6，小小的凱旋音
+    tone(ctx, t0 + i * 0.09, f, 0.35, "triangle", 0.15));
+}
+
+/** 開獎那一刻播那個角色講的那句話。用 CosyVoice3 走 glitch-vn 同一條配音管線
+ *  現生的，跟本篇同一支參考音、同一個語氣指示，聲線是同一個人。 */
+function playVoice(char) {
+  if (muted) return;
+  const a = new Audio(`./assets/voice/${char.id}.mp3`);
+  a.volume = 0.9;
+  a.play().catch(() => {});   // 有些瀏覽器連使用者手勢裡都會偶爾拒放，別讓它炸整支
+}
+
+function toggleMute() {
+  muted = !muted;
+  try { localStorage.setItem("glitch-park-gacha:muted", muted ? "1" : "0"); } catch (e) { /* 存不了就算了 */ }
+  paintMute();
+}
+function paintMute() {
+  muteBtn.textContent = muted ? "音效：關" : "音效：開";
+  muteBtn.setAttribute("aria-pressed", String(muted));
+}
+
 function enterShow() {
   state = S.SHOW; t = 0;
   ball.visible = false;
+  // **機台本身要藏起來。** 立牌走到鏡頭前展示時，機台還站在原地，
+  // 壓黑時只有 prizeLight 沒被壓暗，那盞燈打在機台的白色機身上，
+  // 從她背後透出一塊發亮的方形——本人回報「腳邊那個方形框框」，
+  // 追出來是這個，不是立牌自己的問題（拆過材質、拆過每一片貼圖都排除了）。
+  // 展示這一刻本來就不需要看到機台，藏起來比縮小光錐更乾淨。
+  machine.visible = false;
+  sfxWin();
+  playVoice(picked);
   ballTop.position.y = ballBot.position.y = 0; ballTop.rotation.x = 0;
   // **立牌要走到鏡頭前面來。** 留在機台旁邊的話，它旁邊是一台兩公尺高的
   // 機器，再大的公仔都會看起來很小——本人回報的就是這個。
@@ -825,6 +927,8 @@ function coin() {
   state = S.COINED; t = 0;
   go.disabled = true;
   setHint("投進去了。<b>轉那個把手</b>。");
+  sfxCoin();
+  coinFly();
 }
 
 function turn() {
@@ -834,6 +938,7 @@ function turn() {
   ballTop.material.color.setHex(picked.tint);
   ballBot.material.color.setHex(0xf3ede4);
   setHint("……");
+  sfxCrank();
 }
 
 // 蛋的路徑：罩子底 → 機台裡 → 取物口。三個控制點的貝茲曲線。
@@ -867,11 +972,13 @@ function reset() {
   reveal.innerHTML = "";
   standee.visible = false;
   FX.visible = false;
+  machine.visible = true;
   dimTarget = 0;
   ball.visible = false;
   crank.rotation.z = 0;
   state = S.IDLE; t = 0;
   go.disabled = false;
+  go.textContent = "投幣";   // enterShow() 改成「再轉一次」，回到 IDLE 要換回來
   setHint(Store.data.owned.length === CHARS.length
     ? "<b>七種都轉到了。</b>再投一枚也可以。"
     : "投一枚代幣，然後轉把手。");
@@ -899,8 +1006,18 @@ function paintShelf() {
     const d = document.createElement("div");
     const has = Store.data.owned.includes(c.id);
     d.className = "slot" + (has ? " has" : "");
-    d.textContent = has ? c.name.slice(0, 1) : "？";
     d.title = has ? c.name : "還沒轉到";
+    // **轉到的人用大頭貼，不是首字。** art/avatar 那批本來就是給這裡用的頭像，
+    // 一個字（「格」「黑」……）認不出是誰，頭像才認得出。沒轉到的維持問號，
+    // 不要先把長相洩漏出去。
+    if (has) {
+      const img = document.createElement("img");
+      img.src = `./assets/avatar/${c.id}.webp`;
+      img.alt = c.name;
+      d.appendChild(img);
+    } else {
+      d.textContent = "？";
+    }
     if (has && picked && c.id === picked.id) {
       d.classList.add("pop");
       setTimeout(() => d.classList.remove("pop"), 320);
@@ -908,6 +1025,33 @@ function paintShelf() {
     shelf.appendChild(d);
   }
 }
+
+// ── 收集清單面板 ────────────────────────────────────────────────────────
+// **點右上角那排頭像，列出已經轉到的人。** 只列轉到的，沒轉到的不出現——
+// 本人拍板：不要用清單再洩漏一次「還有誰沒轉到」，那件事交給問號圖示就夠。
+function openCollection() {
+  const owned = CHARS.filter(c => Store.data.owned.includes(c.id));
+  collectionList.innerHTML = owned.length
+    ? owned.map(c => `<div class="row">
+        <img src="./assets/avatar/${c.id}.webp" alt="">
+        <div><div class="name">${c.name}</div><div class="line">「${c.line}」</div></div>
+      </div>`).join("")
+    : `<div class="empty">還沒轉到任何人，先去投幣看看。</div>`;
+  collection.querySelector(".head span").textContent =
+    `收集進度　${owned.length} / ${CHARS.length}`;
+  collection.hidden = false;
+  collectionClose.focus();
+}
+function closeCollection() { collection.hidden = true; shelf.focus(); }
+
+shelf.addEventListener("click", openCollection);
+shelf.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCollection(); }
+});
+collectionClose.addEventListener("click", closeCollection);
+collection.addEventListener("click", e => { if (e.target === collection) closeCollection(); });
+addEventListener("keydown", e => { if (e.key === "Escape" && !collection.hidden) closeCollection(); });
+muteBtn.addEventListener("click", toggleMute);
 
 // ── 主迴圈 ──────────────────────────────────────────────────────────────
 let last = performance.now();
@@ -943,6 +1087,18 @@ function frame(now) {
     scene.fog.color = bg;
   }
 
+  // 投幣動畫：跟遊戲狀態機分開跑，不受 state 影響（COINED 已經進去了，
+  // 這段純粹是視覺效果）。飛到一半開始縮小＋立起來，像側身滑進投幣孔。
+  if (coinT !== null) {
+    coinT = Math.min(coinT + dt / 0.42, 1);
+    const x = ease.out(coinT);
+    coinMesh.position.lerpVectors(COIN_FROM, COIN_TO, x);
+    coinMesh.rotation.z = x * Math.PI * 3;                    // 飛行途中翻滾
+    coinMesh.rotation.y = Math.max(0, (x - 0.6) / 0.4) * (Math.PI / 2);  // 最後轉正側身滑入
+    coinMesh.scale.setScalar(1 - Math.max(0, x - 0.75) / 0.25 * 0.8);
+    if (coinT === 1) { coinMesh.visible = false; coinT = null; }
+  }
+
   heap.rotation.y += dt * 0.06;
 
   if (state === S.COINED) {
@@ -973,8 +1129,10 @@ function frame(now) {
     fxUpdate(dt, t);
     const x = Math.min(t / 0.7, 1);
     standee.scale.setScalar(0.45 + ease.back(x) * 0.55);
-    // 轉到偏一點點的角度停住，側面那條紙板厚度才看得到；再疊一個很慢的來回
-    standee.rotation.y = (1 - x) * 1.1 - 0.22 + Math.sin(t * 0.42) * 0.16;
+    // **轉完就停，不要一直搖。** 原本 x=1 之後還疊了一個正弦波讓它持續小幅
+    // 擺動，本人要的是「立好之後不動」。現在只剩落地前這段旋轉動畫，
+    // x=1 之後 rotation.y 就固定在 0，正對鏡頭——單片立牌本來就該正面看。
+    standee.rotation.y = (1 - x) * 1.1;
   }
 
   renderer.render(scene, camera);
@@ -986,6 +1144,7 @@ function frame(now) {
   await Store.load();
   resize();
   paintShelf();
+  paintMute();   // 反映上次關掉音效的選擇（存在 localStorage，跟遊戲進度分開存）
   // 七張圖先載起來，轉到的時候才不會空一拍
   let left = CHARS.length;
   for (const c of CHARS) {
@@ -1017,16 +1176,22 @@ if (new URLSearchParams(location.search).get("test") === "1") {
       v.project(camera);
       return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (1 - (v.y * 0.5 + 0.5)) * innerHeight };
     },
-    crank: () => this.screenOf(knob),
-    ball: () => this.screenOf(ball),
   };
   window.__test.crank = () => window.__test.screenOf(knob);
   window.__test.ball = () => window.__test.screenOf(ball);
-  // **診斷用：直接把 dim 撥到 1。** swiftshader 軟體渲染太慢，dt 又夾在
-  // 每幀最多 0.05 秒模擬時間，真實等了快兩秒，模擬時間其實只過了零點幾秒，
-  // 壓黑根本還沒跑完——這支拿來確認「dim 真的到 1 之後背景是不是夠黑」，
+  window.__test.coin = () => window.__test.screenOf(coinMesh);
+  window.__test.coinFly = () => coinFly();
+  // **直接把 dim 撥到 1。** swiftshader 軟體渲染太慢，dt 又夾在每幀最多
+  // 0.05 秒模擬時間，真實等了快兩秒，模擬時間其實只過了零點幾秒，壓黑
+  // 根本還沒跑完——這支拿來確認「dim 真的到 1 之後背景是不是夠黑」，
   // 不用等軟渲染追上真實時間。
   window.__test.forceDim = () => { dim = dimTarget = 1; };
+  // 揭曉時把立牌轉到定格的角度截圖看仔細用，跳過那段旋轉動畫。
+  window.__test.freezeStandee = () => {
+    standee.rotation.set(0, 0, 0);
+    standee.scale.setScalar(1);
+    state = S.SHOW; t = 999;
+  };
   // **直接跳到揭曉畫面，略過投幣／轉把手／蛋掉落的動畫。** 那三段動畫
   // 在真實裝置上很快，可是在測試用的軟體渲染下會被拖成慢動作（見上面
   // forceDim 的註解），一輪要等好幾分鐘。要驗的是揭曉那一刻的畫面，
