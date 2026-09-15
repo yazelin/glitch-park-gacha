@@ -76,7 +76,7 @@ function requestTheme(action, isMuted = false) {
 if (embedded) {
   exitBtn.hidden = false;
   exitBtn.addEventListener("click", () => {
-    parent.postMessage({ type: "gacha:exit" }, "*");
+    parent.postMessage({ type: "gacha:exit", complete: Store.data.owned.length === CHARS.length }, "*");
   });
   requestTheme("play", muted);
 }
