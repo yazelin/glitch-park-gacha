@@ -53,6 +53,7 @@ try { muted = localStorage.getItem("glitch-park-gacha:muted") === "1"; } catch (
 // 判斷「有沒有外層」用 window.self !== window.top，這個比較就算跨網域
 // 也讀得到（只是拿參照，不是讀對方頁面的內容），不會被瀏覽器擋。
 const embedded = window.self !== window.top;
+if (embedded) document.documentElement.classList.add("embedded");
 // 混音基準：角色語音檔統一為 -18 LUFS；語音保持在前景，短促音效稍退，
 // 背景音樂再低一層。這些是聽感比例，不是把三種聲音粗暴設成相同振幅。
 const MIX = { theme: .27, voice: .82, sfx: .72 };
