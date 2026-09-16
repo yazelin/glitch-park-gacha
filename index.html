@@ -6,14 +6,13 @@
 <title>格莉奇遊樂園・扭蛋機</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2713%27 fill=%27%23b9a7ec%27/%3E%3Cpath d=%27M3 16h26%27 stroke=%27%23f3ede4%27 stroke-width=%273%27/%3E%3C/svg%3E">
 <style>
-  /* UI 的色票跟 3D 場景同一套（格莉奇的正典配色）。
-     **不要留深色版。** 場景是亮的，深色字卡壓在淡紫地板上讀不出來。 */
+  /* UI 與夜間遊樂園共用玻璃霓虹語彙，保持文字清楚但不遮住機台。 */
   :root{
     --ink:#453a5e; --dim:#7d75a0; --line:#c6bfe0;
     --card:#f6f4fb; --violet:#9b7fd4; --mint:#3fb8ae; --amber:#c98a3c; --new:#c98a3c;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;overflow:hidden;background:#eceaf7;color:var(--ink);
+  html,body{margin:0;height:100%;overflow:hidden;background:#090611;color:var(--ink);
     font:14px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
     -webkit-tap-highlight-color:transparent}
   canvas{display:block;touch-action:none}
@@ -54,10 +53,11 @@
   button:hover:not(:disabled){background:#8b6cc8}
   button:disabled{opacity:.35;cursor:default}
   button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
-  /* 暗角。**不要用黑。** 這個場景是淡紫的，壓黑會顯髒；
-     用她的深紫壓四角，看起來像鏡頭的自然衰減。 */
+  /* 電影式暗角與極淡的青紫色散，集中視線又保留場景邊緣。 */
   #vig{position:fixed;inset:0;pointer-events:none;z-index:1;
-    background:radial-gradient(ellipse 78% 72% at 50% 46%,transparent 40%,rgba(69,58,94,.30) 100%)}
+    background:
+      linear-gradient(90deg,rgba(57,238,224,.035),transparent 24%,transparent 76%,rgba(224,96,221,.035)),
+      radial-gradient(ellipse 76% 70% at 50% 46%,transparent 38%,rgba(3,1,8,.62) 100%)}
   /* 極細的顆粒，讓大片漸層不要有色帶 */
   #vig::after{content:"";position:absolute;inset:0;opacity:.055;mix-blend-mode:multiply;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")}
