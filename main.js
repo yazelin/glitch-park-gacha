@@ -188,13 +188,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 // 白色環境光過強時，淡紫牆、地板與角色的中間色會一起被推到灰白。
 // 曝光只留給燈具與玻璃高光，場景材質本身保留色階與飽和度。
-renderer.toneMappingExposure = 0.9;
+renderer.toneMappingExposure = 1.03;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
-
-// **貼圖載入器要早於用到它的人。** 遊樂園那一段會載海報用的立繪，
-// 宣告放在紙板立牌那一節的話，它在場景建好之前還沒初始化。
-const loader = new THREE.TextureLoader();
 
 // 全身立繪與頭像都收進同一張 atlas。過去會先抓七張全身圖，右上角與收集
 // 面板再各抓七張頭像；現在整頁只有一個角色圖片請求，也只上傳一張 GPU 貼圖。
@@ -213,20 +209,28 @@ const CHAR_ATLAS = {
 const AVATAR_ATLAS = Object.fromEntries(
   ["glitch", "catgrass", "bambi", "noah", "tower", "zerox", "blackhole"]
     .map((id, i) => [id, [2 + i * 100, 520, 96, 96]]));
-let atlasCssUrl = "";
+let atlasImage = null;
 const characterAtlas = fetch(ATLAS_URL)
   .then(response => {
     if (!response.ok) throw new Error(`角色 atlas 載入失敗：${response.status}`);
     return response.blob();
   })
   .then(blob => new Promise(resolve => {
-    // HTTP 只取一次；Three.js 與 CSS 都讀這個本機 blob URL，不會再向伺服器抓圖。
-    atlasCssUrl = URL.createObjectURL(blob);
-    loader.load(atlasCssUrl, tex => {
+    // 只建立一個 Image 解碼實例。Three.js 直接把這個實例上傳到 GPU，右上角與
+    // 收藏面板則畫到小 canvas；不再讓 CSS 用同一個 blob URL 觸發第二次圖片解碼。
+    const objectUrl = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      atlasImage = image;
+      const tex = new THREE.Texture(image);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      tex.needsUpdate = true;
+      URL.revokeObjectURL(objectUrl);
       resolve(tex);
-    }, undefined, () => resolve(null));
+    };
+    image.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(null); };
+    image.src = objectUrl;
   }))
   .catch(() => null);
 
@@ -241,17 +245,14 @@ function atlasPlane(charId, displayHeight) {
   return geometry;
 }
 
-function avatarStyle(charId) {
-  const [x, y, w, h] = AVATAR_ATLAS[charId];
-  return `background-image:url('${atlasCssUrl}');background-size:${ATLAS_W / w * 100}% ${ATLAS_H / h * 100}%;background-position:${x / (ATLAS_W - w) * 100}% ${y / (ATLAS_H - h) * 100}%`;
-}
-
 function avatarNode(char, className = "") {
-  const avatar = document.createElement("span");
+  const avatar = document.createElement("canvas");
   avatar.className = `avatar-sprite ${className}`.trim();
   avatar.setAttribute("role", "img");
   avatar.setAttribute("aria-label", char.name);
-  avatar.style.cssText = avatarStyle(char.id);
+  avatar.width = avatar.height = 96;
+  const [x, y, w, h] = AVATAR_ATLAS[char.id];
+  if (atlasImage) avatar.getContext("2d").drawImage(atlasImage, x, y, w, h, 0, 0, 96, 96);
   return avatar;
 }
 
@@ -310,9 +311,9 @@ let camBase = new THREE.Vector3(), camAim = new THREE.Vector3();
 
 
 
-const hemi = new THREE.HemisphereLight(0x8c78c7, 0x10091c, 0.68);
+const hemi = new THREE.HemisphereLight(0xa99bda, 0x10091c, 0.92);
 scene.add(hemi);
-const key = new THREE.DirectionalLight(0xded6ff, 1.08);
+const key = new THREE.DirectionalLight(0xe7e1ff, 1.38);
 key.position.set(3.2, 6, 4.5);
 key.castShadow = true;
 key.shadow.mapSize.set(1024, 1024);
@@ -323,16 +324,23 @@ const rim = new THREE.DirectionalLight(PAL.mint, 1.34);
 rim.position.set(-4, 2.4, -3);
 scene.add(rim);
 // 機台上方那盞：讓罩子裡的蛋亮起來，遊樂園的燈就是要打在商品上
-const spot = new THREE.SpotLight(0xe9e3ff, 15.5, 9, 0.62, 0.58, 1.6);
+const spot = new THREE.SpotLight(0xe9e3ff, 18, 9, 0.62, 0.58, 1.6);
 spot.position.set(0, 4.6, 1.6);
 spot.target.position.set(0, 1.4, 0);
 spot.castShadow = true;
 spot.shadow.mapSize.set(1024, 1024);
 scene.add(spot, spot.target);
-DIMMABLE.push(hemi, key, rim, spot);
+// 正面柔光只補機台表面的顏色與操作區，背景仍維持暗紫，避免「暗色＝沒打光」。
+const frontFill = new THREE.PointLight(0xcfc5ff, 5.2, 8.5, 2);
+frontFill.position.set(0, 2.15, 4.4);
+scene.add(frontFill);
+const sideFill = new THREE.PointLight(PAL.amber, 2.6, 6.5, 2);
+sideFill.position.set(3.2, 1.8, 2.2);
+scene.add(sideFill);
+DIMMABLE.push(hemi, key, rim, spot, frontFill, sideFill);
 // 地上的光池。真的算 IBL 太貴，貼一張加法漸層就有「聚光燈打在這裡」的樣子。
 const pool = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 5.6),
-  new THREE.MeshBasicMaterial({ map: GLOW, color: PAL.mint, transparent: true, opacity: 0.24,
+  new THREE.MeshBasicMaterial({ map: GLOW, color: PAL.mint, transparent: true, opacity: 0.34,
     blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
 pool.rotation.x = -Math.PI / 2;
 pool.position.set(0, 0.012, 0.3);
@@ -1319,12 +1327,22 @@ function paintShelf() {
 // 本人拍板：不要用清單再洩漏一次「還有誰沒轉到」，那件事交給問號圖示就夠。
 function openCollection() {
   const owned = CHARS.filter(c => Store.data.owned.includes(c.id));
-  collectionList.innerHTML = owned.length
-    ? owned.map(c => `<div class="row">
-        <span class="avatar-sprite collection-avatar" role="img" aria-label="${c.name}" style="${avatarStyle(c.id)}"></span>
-        <div><div class="name">${c.name}</div><div class="line">「${c.line}」</div></div>
-      </div>`).join("")
-    : `<div class="empty">還沒轉到任何人，先去投幣看看。</div>`;
+  collectionList.replaceChildren();
+  if (owned.length) {
+    for (const c of owned) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.appendChild(avatarNode(c, "collection-avatar"));
+      const copy = document.createElement("div");
+      const name = document.createElement("div"); name.className = "name"; name.textContent = c.name;
+      const line = document.createElement("div"); line.className = "line"; line.textContent = `「${c.line}」`;
+      copy.append(name, line); row.appendChild(copy); collectionList.appendChild(row);
+    }
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "empty"; empty.textContent = "還沒轉到任何人，先去投幣看看。";
+    collectionList.appendChild(empty);
+  }
   collection.querySelector(".head span").textContent =
     `收集進度　${owned.length} / ${CHARS.length}`;
   collection.hidden = false;
