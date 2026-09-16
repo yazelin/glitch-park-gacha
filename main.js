@@ -26,9 +26,9 @@ const PAL = {
   mint:   0x8de8e0,   // 像素光 青
   pink:   0xd9b8f0,   // 粉紫
   shoe:   0xf6f4fb,   // 鞋 白
-  floor:  0x171027,   // 夜間遊樂園的深紫地坪
-  floor2: 0x261a3f,   // 地板格線與反光區
-  sky:    0x181025,   // 有照明的暗紫室內，不使用會吃掉牆面細節的近黑色
+  floor:  0xd7d1ea,   // 明亮室內的淡紫地坪
+  floor2: 0xe9e3d4,   // 暖色格線，保留遊樂園的柔和感
+  sky:    0xeceaf7,   // 恢復原本自然明亮的室內背景
   // ── 互補色 ──────────────────────────────────────────────
   // **一整片紫青看久了會累。** 紫的補色在黃橘那一帶，青的補色在珊瑚紅。
   // 用量刻意壓小：只出現在燈、獎品、招牌邊、幾台背景機：
@@ -46,8 +46,8 @@ const brightnessInput = el("brightness"), brightnessValue = el("brightnessValue"
 const exitBtn = el("exit");
 let muted = false;
 try { muted = localStorage.getItem("glitch-park-gacha:muted") === "1"; } catch (e) { /* 環境不給存就當沒開過 */ }
-let brightnessPercent = 115;
-try { brightnessPercent = Number(localStorage.getItem("glitch-park-gacha:brightness")) || 115; } catch (e) { /* 使用預設亮度 */ }
+let brightnessPercent = 100;
+try { brightnessPercent = Number(localStorage.getItem("glitch-park-gacha:brightness")) || 100; } catch (e) { /* 使用預設亮度 */ }
 brightnessPercent = Math.max(65, Math.min(180, brightnessPercent));
 
 // ── 離開 ────────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 function applyBrightness(value, persist = false) {
-  brightnessPercent = Math.max(65, Math.min(180, Number(value) || 115));
+  brightnessPercent = Math.max(65, Math.min(180, Number(value) || 100));
   brightnessInput.value = String(brightnessPercent);
   brightnessValue.value = `${brightnessPercent}%`;
   renderer.toneMappingExposure = 1.03 * brightnessPercent / 100;
@@ -326,9 +326,9 @@ let camBase = new THREE.Vector3(), camAim = new THREE.Vector3();
 
 
 
-const hemi = new THREE.HemisphereLight(0xc8bce9, 0x281735, 1.28);
+const hemi = new THREE.HemisphereLight(0xc9c2e6, 0x655879, 1.12);
 scene.add(hemi);
-const key = new THREE.DirectionalLight(0xeee9ff, 1.72);
+const key = new THREE.DirectionalLight(0xeee7ff, 1.42);
 key.position.set(3.2, 6, 4.5);
 key.castShadow = true;
 key.shadow.mapSize.set(1024, 1024);
@@ -339,17 +339,17 @@ const rim = new THREE.DirectionalLight(PAL.mint, 1.34);
 rim.position.set(-4, 2.4, -3);
 scene.add(rim);
 // 機台上方那盞：讓罩子裡的蛋亮起來，遊樂園的燈就是要打在商品上
-const spot = new THREE.SpotLight(0xe9e3ff, 18, 9, 0.62, 0.58, 1.6);
+const spot = new THREE.SpotLight(0xeee8ff, 13.5, 9, 0.62, 0.58, 1.6);
 spot.position.set(0, 4.6, 1.6);
 spot.target.position.set(0, 1.4, 0);
 spot.castShadow = true;
 spot.shadow.mapSize.set(1024, 1024);
 scene.add(spot, spot.target);
 // 正面柔光只補機台表面的顏色與操作區，背景仍維持暗紫，避免「暗色＝沒打光」。
-const frontFill = new THREE.PointLight(0xd8cfff, 7.2, 9.5, 2);
+const frontFill = new THREE.PointLight(0xd8cfff, 2.8, 9.5, 2);
 frontFill.position.set(0, 2.15, 4.4);
 scene.add(frontFill);
-const sideFill = new THREE.PointLight(PAL.amber, 3.8, 7.5, 2);
+const sideFill = new THREE.PointLight(PAL.amber, 1.5, 7.5, 2);
 sideFill.position.set(3.2, 1.8, 2.2);
 scene.add(sideFill);
 DIMMABLE.push(hemi, key, rim, spot, frontFill, sideFill);
@@ -366,11 +366,11 @@ const floorTex = (function () {
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const x = c.getContext("2d");
-  x.fillStyle = "#100a1c";
+  x.fillStyle = "#b4a7cf";
   x.fillRect(0, 0, 128, 128);
-  x.fillStyle = "#1c1230";
+  x.fillStyle = "#d1c2b3";
   x.fillRect(0, 0, 64, 64); x.fillRect(64, 64, 64, 64);
-  x.strokeStyle = "rgba(141,232,224,.19)";
+  x.strokeStyle = "rgba(69,58,94,.12)";
   x.lineWidth = 2;
   x.strokeRect(1, 1, 126, 126);
   const t = new THREE.CanvasTexture(c);
@@ -382,8 +382,8 @@ const floorTex = (function () {
 const floor = new THREE.Mesh(
   new THREE.CircleGeometry(11, 56),
   // 地板略帶反光：遊樂園的地是擦過的，會把燈映出來一點
-  new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.38, roughnessMap: ROUGH,
-    metalness: 0.28, color: 0xffffff, envMapIntensity: 0.92 }));
+  new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.58, roughnessMap: ROUGH,
+    metalness: 0.08, color: 0xf2eef7, envMapIntensity: 0.48 }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
@@ -632,17 +632,17 @@ function coinFly() {
   const wallContext = wallCanvas.getContext("2d");
   const wallImage = wallContext.createImageData(384, 384);
   for (let i = 0; i < wallImage.data.length; i += 4) {
-    const grain = Math.random() * 22 - 11;
-    wallImage.data[i] = 72 + grain;
-    wallImage.data[i + 1] = 49 + grain;
-    wallImage.data[i + 2] = 96 + grain;
+    const grain = Math.random() * 24 - 12;
+    wallImage.data[i] = 180 + grain;
+    wallImage.data[i + 1] = 168 + grain;
+    wallImage.data[i + 2] = 208 + grain;
     wallImage.data[i + 3] = 255;
   }
   wallContext.putImageData(wallImage, 0, 0);
   wallContext.globalAlpha = .26;
   wallContext.lineWidth = 2;
   for (let y = 22; y < 384; y += 31) {
-    wallContext.strokeStyle = y % 2 ? "#a28abb" : "#39264e";
+    wallContext.strokeStyle = y % 2 ? "#f2effa" : "#aaa0c4";
     wallContext.beginPath();
     wallContext.moveTo(-18, y);
     wallContext.bezierCurveTo(90, y - 7, 245, y + 8, 410, y - 3);
@@ -661,7 +661,7 @@ function coinFly() {
   back.receiveShadow = true;
   scene.add(back);
   // 大面牆的施工分區接縫。線很淺，只在側光下提供尺度，不做成磁磚格。
-  const seamMat = new THREE.MeshBasicMaterial({ color: 0xc0a8dd, transparent: true, opacity: .42 });
+  const seamMat = new THREE.MeshBasicMaterial({ color: 0x8f86ad, transparent: true, opacity: .24 });
   for (const x of [-6.5, 0, 6.5]) {
     const seam = new THREE.Mesh(new THREE.PlaneGeometry(.018, 7), seamMat);
     seam.position.set(x, 3.5, -6.975); scene.add(seam);
@@ -680,7 +680,7 @@ function coinFly() {
   scene.add(skirting);
 
   // 天花板與吊燈
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(26, 16), M(0x10091b, 0.78, .08));
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(26, 16), M(0xe8e4f5, 0.92));
   ceil.position.set(0, 6.4, -1);
   ceil.rotation.x = Math.PI / 2;
   scene.add(ceil);
