@@ -28,7 +28,7 @@ const PAL = {
   shoe:   0xf6f4fb,   // 鞋 白
   floor:  0x171027,   // 夜間遊樂園的深紫地坪
   floor2: 0x261a3f,   // 地板格線與反光區
-  sky:    0x090611,   // 深色空間，讓機台的霓虹真正亮起來
+  sky:    0x181025,   // 有照明的暗紫室內，不使用會吃掉牆面細節的近黑色
   // ── 互補色 ──────────────────────────────────────────────
   // **一整片紫青看久了會累。** 紫的補色在黃橘那一帶，青的補色在珊瑚紅。
   // 用量刻意壓小：只出現在燈、獎品、招牌邊、幾台背景機：
@@ -42,9 +42,13 @@ const el = id => document.getElementById(id);
 const hint = el("hint"), go = el("go"), shelf = el("shelf"), reveal = el("reveal");
 const collection = el("collection"), collectionList = el("collectionList"), collectionClose = el("collectionClose");
 const muteBtn = el("mute");
+const brightnessInput = el("brightness"), brightnessValue = el("brightnessValue");
 const exitBtn = el("exit");
 let muted = false;
 try { muted = localStorage.getItem("glitch-park-gacha:muted") === "1"; } catch (e) { /* 環境不給存就當沒開過 */ }
+let brightnessPercent = 115;
+try { brightnessPercent = Number(localStorage.getItem("glitch-park-gacha:brightness")) || 115; } catch (e) { /* 使用預設亮度 */ }
+brightnessPercent = Math.max(65, Math.min(180, brightnessPercent));
 
 // ── 離開 ────────────────────────────────────────────────────────────────
 // **嵌進 Larch 之後要有路回去，不能只能關分頁。** 這支只負責「按了之後
@@ -192,6 +196,17 @@ renderer.toneMappingExposure = 1.03;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
+function applyBrightness(value, persist = false) {
+  brightnessPercent = Math.max(65, Math.min(180, Number(value) || 115));
+  brightnessInput.value = String(brightnessPercent);
+  brightnessValue.value = `${brightnessPercent}%`;
+  renderer.toneMappingExposure = 1.03 * brightnessPercent / 100;
+  if (persist) try { localStorage.setItem("glitch-park-gacha:brightness", String(brightnessPercent)); } catch (e) { /* 不影響遊戲 */ }
+}
+brightnessInput.addEventListener("input", () => applyBrightness(brightnessInput.value));
+brightnessInput.addEventListener("change", () => applyBrightness(brightnessInput.value, true));
+applyBrightness(brightnessPercent);
+
 // 全身立繪與頭像都收進同一張 atlas。過去會先抓七張全身圖，右上角與收集
 // 面板再各抓七張頭像；現在整頁只有一個角色圖片請求，也只上傳一張 GPU 貼圖。
 // 每格保留原圖寬高，不縮放、不拉伸，PlaneGeometry 的 UV 只取對應區塊。
@@ -311,9 +326,9 @@ let camBase = new THREE.Vector3(), camAim = new THREE.Vector3();
 
 
 
-const hemi = new THREE.HemisphereLight(0xa99bda, 0x10091c, 0.92);
+const hemi = new THREE.HemisphereLight(0xc8bce9, 0x281735, 1.28);
 scene.add(hemi);
-const key = new THREE.DirectionalLight(0xe7e1ff, 1.38);
+const key = new THREE.DirectionalLight(0xeee9ff, 1.72);
 key.position.set(3.2, 6, 4.5);
 key.castShadow = true;
 key.shadow.mapSize.set(1024, 1024);
@@ -331,10 +346,10 @@ spot.castShadow = true;
 spot.shadow.mapSize.set(1024, 1024);
 scene.add(spot, spot.target);
 // 正面柔光只補機台表面的顏色與操作區，背景仍維持暗紫，避免「暗色＝沒打光」。
-const frontFill = new THREE.PointLight(0xcfc5ff, 5.2, 8.5, 2);
+const frontFill = new THREE.PointLight(0xd8cfff, 7.2, 9.5, 2);
 frontFill.position.set(0, 2.15, 4.4);
 scene.add(frontFill);
-const sideFill = new THREE.PointLight(PAL.amber, 2.6, 6.5, 2);
+const sideFill = new THREE.PointLight(PAL.amber, 3.8, 7.5, 2);
 sideFill.position.set(3.2, 1.8, 2.2);
 scene.add(sideFill);
 DIMMABLE.push(hemi, key, rim, spot, frontFill, sideFill);
@@ -617,17 +632,17 @@ function coinFly() {
   const wallContext = wallCanvas.getContext("2d");
   const wallImage = wallContext.createImageData(384, 384);
   for (let i = 0; i < wallImage.data.length; i += 4) {
-    const grain = Math.random() * 15 - 7;
-    wallImage.data[i] = 28 + grain;
-    wallImage.data[i + 1] = 18 + grain;
-    wallImage.data[i + 2] = 45 + grain;
+    const grain = Math.random() * 22 - 11;
+    wallImage.data[i] = 72 + grain;
+    wallImage.data[i + 1] = 49 + grain;
+    wallImage.data[i + 2] = 96 + grain;
     wallImage.data[i + 3] = 255;
   }
   wallContext.putImageData(wallImage, 0, 0);
   wallContext.globalAlpha = .26;
   wallContext.lineWidth = 2;
   for (let y = 22; y < 384; y += 31) {
-    wallContext.strokeStyle = y % 2 ? "#4a3766" : "#171022";
+    wallContext.strokeStyle = y % 2 ? "#a28abb" : "#39264e";
     wallContext.beginPath();
     wallContext.moveTo(-18, y);
     wallContext.bezierCurveTo(90, y - 7, 245, y + 8, 410, y - 3);
@@ -646,7 +661,7 @@ function coinFly() {
   back.receiveShadow = true;
   scene.add(back);
   // 大面牆的施工分區接縫。線很淺，只在側光下提供尺度，不做成磁磚格。
-  const seamMat = new THREE.MeshBasicMaterial({ color: PAL.violet, transparent: true, opacity: .34 });
+  const seamMat = new THREE.MeshBasicMaterial({ color: 0xc0a8dd, transparent: true, opacity: .42 });
   for (const x of [-6.5, 0, 6.5]) {
     const seam = new THREE.Mesh(new THREE.PlaneGeometry(.018, 7), seamMat);
     seam.position.set(x, 3.5, -6.975); scene.add(seam);

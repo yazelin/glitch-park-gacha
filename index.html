@@ -28,6 +28,12 @@
     backdrop-filter:blur(8px)}
   #exit:hover,#mute:hover{background:rgba(55,42,82,.94)}
   #mute[aria-pressed="true"]{color:#b7fff8;border-color:var(--mint)}
+  #brightnessControl{min-height:44px;display:flex;align-items:center;gap:8px;padding:7px 10px;
+    border:1px solid rgba(216,207,239,.68);border-radius:8px;background:rgba(31,23,49,.88);
+    color:#f7f4ff;box-shadow:0 3px 14px rgba(28,20,45,.22);backdrop-filter:blur(8px);
+    white-space:nowrap;font-size:13px}
+  #brightness{width:112px;accent-color:#8de8e0;cursor:pointer}
+  #brightnessValue{min-width:38px;color:#b7fff8;font-variant-numeric:tabular-nums}
   h1{margin:0;padding:7px 10px;border:1px solid rgba(216,207,239,.54);border-radius:8px;
     background:rgba(31,23,49,.84);color:#fff;font-size:18px;font-weight:650;line-height:1.35;
     letter-spacing:.06em;text-shadow:0 1px 3px rgba(0,0,0,.45);box-shadow:0 3px 14px rgba(28,20,45,.2);
@@ -115,6 +121,8 @@
     .top{gap:8px}.topLeft{gap:6px}.topRight{max-width:64vw;flex-direction:column;align-items:flex-end;gap:6px}.embedded .topRight{margin-top:54px;margin-right:0}
     h1{font-size:17px;padding:6px 9px}h1 small{font-size:12px}
     #exit,#mute{font-size:14px;padding:7px 11px}
+    #brightnessControl{min-height:40px;padding:5px 8px;font-size:12px}
+    #brightness{width:92px}
     #shelf{max-width:64vw;gap:4px}
     .slot{width:30px;height:30px;font-size:10px}
     #hint{font-size:14px;max-width:calc(100vw - 112px);padding:8px 10px}
@@ -134,6 +142,10 @@
       <h1>扭蛋機<small>格莉奇遊樂園</small></h1>
     </div>
     <div class="topRight">
+      <label id="brightnessControl">亮度
+        <input id="brightness" type="range" min="65" max="180" value="115" step="5" aria-label="場景亮度">
+        <output id="brightnessValue" for="brightness">115%</output>
+      </label>
       <button id="mute" aria-pressed="false">聲音：開</button>
       <div id="shelf" aria-label="查看收集進度" role="button" tabindex="0"></div>
     </div>
