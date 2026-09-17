@@ -63,7 +63,7 @@ if (embedded) document.documentElement.classList.add("embedded");
 const MIX = { theme: .27, voice: .82, sfx: .72 };
 const THEME_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? "./assets/audio/glitch-park-theme.mp3"
-  : "https://yazelin.github.io/glitch-park-claw/assets/audio/glitch-park-theme.mp3";
+  : "https://cdn.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3";
 let themeAudio = null;
 
 // 獨立遊玩時由本頁播放共用的遊樂園主題曲；嵌入 Larch 時完全不在 iframe

@@ -67,3 +67,6 @@ glitch-vn repo 的 `tools/voice_batch.py`。
 ## 授權
 
 角色與美術素材出自《格莉奇與黑洞先生》，版權保留。程式碼另計。
+
+主題曲改從 jsDelivr 載（五款共用同一個網址，瀏覽器快取共用）：`https://cdn.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3`。
+Pages 直連 700 KB 要 11 秒、jsDelivr 1 秒。改檔要 purge：`https://purge.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3`。
